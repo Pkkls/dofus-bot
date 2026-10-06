@@ -1813,6 +1813,7 @@ while (true) {
     const win = /Victoire !/.test(text) && !/Défaite/.test(text);
     const num = (s) => s.replace(/\D/g, '');
     const g = text.match(/\+([\d\s]+?) XP\s*\+([\d\s]+?) kamas/);
+    if (win && !g && !existsSync('dump/victoire.txt')) writeFileSync('dump/victoire.txt', text.slice(0, 5000)); // ecran de fin refait : capture pour relire l'XP
     if (!fight && win && g) { const L = (S.learn ??= {}); const x = +g[1].replace(/\D/g, ''); L.xpf = L.xpf ? 0.9 * L.xpf + 0.1 * x : x; } // XP moyenne par victoire de chasse (validation sagesse)
     if (!fight && S.attackZone && S.attackAt && Date.now() - S.attackAt < 900000) { // stats de zone (chasse) : moyennes glissantes
       const Z = (((S.learn ??= {}).zones ??= {})[S.attackZone] ??= { n: 0, win: 0.9, xpm: 0, lvl: S.level });
@@ -1979,7 +1980,7 @@ while (true) {
         if (!S.queue.includes('deck')) S.queue.push('deck');
       }
     }
-    if (CFG.hardEvery && CFG.manualFight && !xpHard && !spotQueue.length && zone && !adventure && !S.recharging && S.level - (S.learn?.hard?.lvl ?? 0) >= CFG.hardEvery) {
+    if (CFG.hardEvery && CFG.manualFight && !xpHard && !spotQueue.length && zone && !adventure && !S.recharging && S.level - ((S.learn?.hard?.lvl ?? 0) > S.level ? 0 : S.learn?.hard?.lvl ?? 0) >= CFG.hardEvery) {
       xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0;
       decide(`XP hard automatique : ${S.learn?.hard?.n ? `${S.level - S.learn.hard.lvl} niveaux depuis la derniere mesure` : 'limite jamais mesuree'}, je recherche ma limite`);
       log('XP HARD demarre (auto)');
@@ -2010,7 +2011,7 @@ while (true) {
     }
     if (page.url() !== COMBAT) { await page.goto(COMBAT); continue; } // apres boss/deck, revient a l'ecran de fin
     const step = page.getByRole('button', { name: 'Étape suivante', exact: true });
-    if (CFG.manualFight && await step.isVisible().catch(() => false)) { // "Suivant en auto" lancerait le combat en Auto
+    if (CFG.manualFight && !rushing() && await step.isVisible().catch(() => false)) { // "Suivant en auto" lancerait le combat en Auto
       decide('Combat suivant en manuel : Etape suivante');
       await step.click(); autoClicked = false; await sleep(3000);
     } else if (S.abyssRun && !rushing() && Date.now() - S.abyssRun.start < 3 * 3600000 && !/\/abysses/.test(page.url())) { // descente en cours : on la continue
