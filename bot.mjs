@@ -39,12 +39,25 @@ const parseJeu = (t) => {
   const m = t.match(/Énergie\n(\d+)\/(\d+)\n+(?:\+1 dans (?:(\d+) min)?\s*(\d+)?)?/);
   return m && { e: +m[1], max: +m[2], next: (+(m[3] ?? 0) * 60 + +(m[4] ?? 0)) * 1000, price: +(t.match(/\(([\d\s]+) K le point/)?.[1].replace(/\D/g, '') ?? 0), left: +(t.match(/encore (\d+) aujourd/)?.[1] ?? 0) };
 };
+// Annonces du site (bandeau "Annonce" et fenetres) : lues, signalees si nouvelles ; redemarrage / maintenance / hebergeur -> mode prudent 15 min
+const noteAnnouncement = (msg) => {
+  const key = msg.replace(/\d+/g, '#').slice(0, 160);
+  if ((S.seenAnnouncements ??= []).includes(key)) return;
+  S.seenAnnouncements.push(key); if (S.seenAnnouncements.length > 50) S.seenAnnouncements.shift();
+  log(`ANNONCE du site : ${msg.slice(0, 300)}`);
+  decide(`Annonce du site : ${msg.slice(0, 200)}`);
+  if (/red[ée]marr|maintenance|h[ée]bergeur|migration|coupure|mise a jour|mise à jour/i.test(msg)) {
+    S.maintenanceUntil = Date.now() + 15 * 60000;
+    decide('Annonce de redemarrage / maintenance : erreurs attendues pendant 15 min, je ne force pas');
+    if (/h[ée]bergeur|adresse|nouveau site|domaine/i.test(msg)) alert('annonce du site : changement d\'hebergeur, l\'adresse du site peut changer');
+  }
+};
 // Boite de reception du superviseur (dump/inbox.jsonl) : ce que le bot ne sait pas traiter seul, avec la capture associee.
 // Lue par l'agent superviseur (SUPERVISEUR.md) qui enquete, corrige le code, teste et redemarre.
 const INBOX = [
   [/^MAJ SITE nouveautes/, 'maj-site'], [/^ABYSSES nouvel ecran/, 'ecran-abysses'], [/^BLOQUE fenetre inconnue/, 'fenetre-inconnue'],
   [/^INDICE /, 'indice-defaite'], [/^COMBAT manuel en echec/, 'combat-manuel-echec'], [/^COMBAT pat sans issue/, 'pat-sans-issue'],
-  [/^ERREUR /, 'erreur'], [/opti \(0\)|budget nul|achat rate|introuvable/, 'lecture-aberrante'], [/^AVENTURE indisponible/, 'aventure-bloquee'],
+  [/^ERREUR /, 'erreur'], [/^ANNONCE du site/, 'annonce'], [/opti \(0\)|budget nul|achat rate|introuvable/, 'lecture-aberrante'], [/^AVENTURE indisponible/, 'aventure-bloquee'],
 ];
 const toInbox = (line) => {
   const hit = INBOX.find(([re]) => re.test(line));
@@ -84,7 +97,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -1303,7 +1316,11 @@ const ctx = await chromium.launchPersistentContext('profile', { headless: false,
 const page = ctx.pages()[0] ?? await ctx.newPage();
 startDashboard(page);
 // fenetres d'annonce ("Rejoins le Discord !", redemarrage du serveur...) : fermees par "Plus tard" avant toute action, ou que soit le bot (gestion comprise)
-await page.addLocatorHandler(page.getByRole('button', { name: 'Plus tard', exact: true }), async (b) => { await b.click().catch(() => {}); log('ANNONCE fermee (Plus tard)'); }, { noWaitAfter: true });
+await page.addLocatorHandler(page.getByRole('button', { name: 'Plus tard', exact: true }), async (b) => {
+  const msg = (await b.locator('xpath=ancestor::div[.//h2 or .//h3][1]').innerText().catch(() => '')).replace(/\s+/g, ' ').replace(/Rejoindre le Discord|Plus tard/g, '').trim();
+  if (msg) noteAnnouncement(msg);
+  await b.click().catch(() => {}); log('ANNONCE fermee (Plus tard)');
+}, { noWaitAfter: true });
 await page.route(/\/img\//, (route) => (blockable(route.request().url()) ? route.abort() : route.continue()));
 page.on('request', (r) => { if (!r.url().startsWith(BASE)) return; if (blockable(r.url())) { NET.blocked++; return; } /* bloquee : jamais envoyee */ const k = netKind(r); NET.total++; NET.by[k]++; NET.recent.push([Date.now(), k]); });
 page.on('response', (r) => { if (r.status() === 429 && r.url().startsWith(BASE)) NET.r429++; });
@@ -1513,6 +1530,8 @@ while (true) {
   const text = await page.locator('body').innerText().catch(() => '');
   // "bouge" = la zone de jeu (main) change ; le chat defile en permanence et masquait les pages figees
   const gameText = await page.locator('main').innerText().catch(() => text);
+  const banner = text.match(/Annonce\s*([^\n]{10,400})/)?.[1]?.trim();
+  if (banner) noteAnnouncement(banner);
   // bug du site : le chat n'affiche plus personne en ligne (connexion temps reel perdue) -> F5 apres 10 s ; jamais en file d'attente
   const online = text.match(/(\d+)\s+en ligne/)?.[1];
   if (/\bChat\b/.test(text) && (online == null || +online === 0) && !/File d.attente|Le serveur est plein/i.test(text)) {
@@ -1823,6 +1842,9 @@ while (true) {
     if (CFG.manualFight && await step.isVisible().catch(() => false)) { // "Suivant en auto" lancerait le combat en Auto
       decide('Combat suivant en manuel : Etape suivante');
       await step.click(); autoClicked = false; await sleep(3000);
+    } else if (S.abyssRun && Date.now() - S.abyssRun.start < 3 * 3600000 && !/\/abysses/.test(page.url())) { // descente en cours : on la continue
+      decide(`Abysses : descente en cours (etage ${S.abyssRun.floor ?? '?'}), j'y retourne`);
+      await page.goto(BASE + '/abysses').catch(() => {});
     } else if (CFG.manualFight && wantAdventure() && (await goAdventure(page))) {
       // aventure prioritaire : etape lancee
     } else if (CFG.manualFight && zone) {
@@ -1881,7 +1903,8 @@ while (true) {
   // serveur en vrac ou rien ne bouge depuis 30 s : F5
   // serveur surcharge : page d'erreur -> F5 tout de suite ; page figee stuckSec secondes -> deblocage appris (F5 en tete)
   if (/Application error|Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out|Something went wrong|This page couldn.t load|ERR_[A-Z_]+|(Error|HTTP|Erreur) 50[234]/i.test(text.slice(0, 400))) {
-    log('ERREUR serveur - F5'); await page.reload().catch(() => {}); await sleep(2000);
+    const maint = Date.now() < (S.maintenanceUntil ?? 0); // redemarrage annonce : on laisse le serveur revenir
+    log(`ERREUR serveur - F5${maint ? ' (maintenance annoncee, attente 30 s)' : ''}`); if (maint) await sleep(30000); await page.reload().catch(() => {}); await sleep(2000);
     autoClicked = false; idleSince = Date.now();
   } else if (Date.now() - idleSince > CFG.stuckSec * 1000 && /\/chasse\?zone=\d+/.test(page.url())) {
     // fige sur la page d'une zone : l'attaque n'est pas partie (serveur 503, clic perdu) -> on la relance, c'est ce qu'on voulait faire
