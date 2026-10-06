@@ -777,6 +777,7 @@ async function tryBoss(page) {
   return true;
 }
 
+const deckKey = () => (S.deck ?? []).map((c) => c.name).sort().join('|'); // empreinte du deck (evolution du perso)
 // Arene : adversaires = persos d'autres joueurs joues par l'ordi. On defie le plus faible (opti), s'il est sous le notre.
 const parseArena = (t) => ({
   elo: +(t.match(/TON ELO\n(\d+)/)?.[1] ?? 0),
@@ -793,11 +794,16 @@ async function fightArena(page) {
   S.arena = { elo: a.elo, opti: a.opti, rank: a.rank, wl: a.wl, at: Date.now() };
   if (a.energy) setEnergy(a.energy); // 0 = texte non trouve
   if (a.energy < CFG.arenaMinEnergy) { decide(`Arene sautee : energie ${a.energy} sous le minimum ${CFG.arenaMinEnergy}, je la garde pour la chasse`); log(`ARENE ignoree : energie ${a.energy} < ${CFG.arenaMinEnergy}`); return false; }
-  const i = a.opp.reduce((b, o, j) => (o.opti < a.opp[b].opti ? j : b), 0);
+  // adversaires a eviter tant que le perso n'a pas evolue (pat sans issue ou defaite contre eux) : +3 niveaux ou deck change -> on retente
+  const avoid = S.learn?.arenaAvoid ?? {};
+  const okOpp = a.opp.map((o, j) => [o, j]).filter(([o]) => { const v = avoid[o.name]; return !v || S.level - v.lvl >= 3 || deckKey() !== v.deck; });
+  const i = okOpp.length ? okOpp.reduce((b, c) => (c[0].opti < b[0].opti ? c : b))[1] : 0;
+  if (!okOpp.length) { decide('Arene sautee : les adversaires proposes sont tous a eviter (pat ou defaite recente)'); return false; }
   if (!a.opp.length || a.opp[i].opti > a.opti) { decide(`Arene sautee : le plus faible des 6 (${a.opp[i]?.opti ?? '?'}) depasse mon opti ${a.opti}`); log(`ARENE ignoree : aucun adversaire sous mon opti (${a.opti})`); return false; }
   decide(`Arene : je defie ${a.opp[i].name}, le plus faible (opti ${a.opp[i].opti} contre ${a.opti})`);
   await page.getByRole('button', { name: 'Défier' }).nth(i).click();
   log(`ARENE defie ${a.opp[i].name} (opti ${a.opp[i].opti} vs ${a.opti}, Elo ${a.elo})`);
+  S.arenaFoe = a.opp[i].name; // pour l'eviter s'il nous bat ou nous bloque
   return true;
 }
 
@@ -1422,6 +1428,7 @@ while (true) {
     if (fightMem.profile) { rewardProfile(fightMem.profile, win, fightMem.turn); const p = S.learn.prof[fightMem.profile]; decide(`Style ${fightMem.profile} : ${win ? 'victoire' : 'defaite'} en ${fightMem.turn} tours (${p.w}/${p.n} gagnes)`); fightMem = { turn: 0, endHp: null, inc: 0, profile: null }; }
     if (fight === 'boss') S.boss = { ...S.boss, live: false, last: win ? 'victoire' : 'defaite' };
     if (fight === 'arene') S.arena = { ...S.arena, last: win ? 'victoire' : 'defaite' };
+    if (fight === 'arene' && !win && S.arenaFoe) { ((S.learn ??= {}).arenaAvoid ??= {})[S.arenaFoe] = { lvl: S.level, deck: deckKey() }; decide(`Arene : ${S.arenaFoe} m'a battu ou bloque, je l'evite jusqu'a +3 niveaux ou un nouveau deck`); }
     S.mode = fight ?? (adventure ? 'aventure' : 'chasse');
     fight = null;
     // objets droppes : equipe si emplacement libre ou meilleur score que la piece portee
