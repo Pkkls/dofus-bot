@@ -1295,7 +1295,7 @@ let clickFails = [], myWaitSince = 0, satStreak = 0, inQueue = false; // clics e
 // XP hard (bouton) : plus gros groupes, palier suivant a chaque victoire, 1re defaite -> un cran plus bas puis montee normale
 // Deblocage appris (S.learn.unblock[signature][action] = { ok, ko }) : page figee 30 s -> une action sure a la fois, la meilleure connue d'abord.
 // Jamais : achats/ventes/brisage, fuite, deconnexion, guilde, reinitialisation, Discord, test de presence (traite avant).
-const UNBLOCK_OK = /^(Retour|Continuer|Plus tard|Fermer|OK|Compris|J.ai compris|Suivant|Étape suivante|Chasse libre|Autres groupes|Refaire ce combat|Réessayer|Passer|Valider|Reprendre|Fin du tour)/i;
+const UNBLOCK_OK = /^(Partir|Retour|Continuer|Plus tard|Fermer|OK|Compris|J.ai compris|Suivant|Étape suivante|Chasse libre|Autres groupes|Refaire ce combat|Réessayer|Passer|Valider|Reprendre|Fin du tour)/i;
 const UNBLOCK_NO = /Acheter|Vendre|Briser|Fuir|Déconnexion|Dissoudre|Réinitialiser|Supprimer|Abandonner|Payer|Discord|Défier|Améliorer|Fusionner|Équiper|Ouvrir/i;
 let unblockPending = null, unblockTried = new Set();
 async function unblock(page, text) {
@@ -1388,6 +1388,16 @@ while (true) {
   }
   satStreak = 0;
 
+  // "Aucun combat en cours" (apres redemarrage, file d'attente, combat expire) : on relance un combat de chasse
+  if (/Aucun combat en cours/i.test(text) && !/À toi de jouer/.test(text)) {
+    zone ??= await pickZone(page, null, false).catch(() => null);
+    decide(`Aucun combat en cours : je relance la chasse${zone ? ` (${zone.replace('/chasse?zone=', 'zone ')})` : ''}`);
+    log('AUCUN combat - relance chasse');
+    if (zone) await safe('attaque', attackGroup(page, zone, grpRank()));
+    else await page.locator('main').locator('a, button').filter({ hasText: /Partir à la chasse/ }).first().click({ timeout: 5000 }).catch(() => {});
+    autoClicked = false; idleSince = Date.now();
+    continue;
+  }
   // file d'attente (serveur plein, "garde cette page ouverte") : surtout ne rien recharger ni naviguer, sinon la place est perdue
   if (/File d.attente|Le serveur est plein/i.test(text)) {
     const pos = text.match(/(\d+)\s*[ᵉe]\s*\n/)?.[1] ?? text.match(/(\d+) joueurs en attente/)?.[1] ?? '?';
