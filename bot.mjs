@@ -115,7 +115,8 @@ const parseCard = (txt) => {
 const cardValue = (c, s) => {
   if (!c.dmg) return 0;
   const e = c.dmg.elem;
-  const v = (c.dmg.avg * (1 + ((s[ELEM_STAT[e]] ?? 0) + s.Puissance) / 100) + (s.dmg[e] ?? 0)) * (S.learn?.k?.[e] ?? 1); // x correctif appris en combat (reel / prevu)
+  const zr = S.learn?.res?.[S.zone]?.[e] ?? 0; // resistance moyenne des monstres de la zone actuelle (negative = faiblesse)
+  const v = (c.dmg.avg * (1 + ((s[ELEM_STAT[e]] ?? 0) + s.Puissance) / 100) + (s.dmg[e] ?? 0)) * (S.learn?.k?.[e] ?? 1) * (1 - zr / 100); // x correctif appris, x resistances de la zone
   return (v * (c.dmg.zone ? 1.15 : 1) * (c.dmg.steal ? 1.1 : 1)) / c.cost;
 };
 const chooseDeck = (deck, pool, s) => {
@@ -580,6 +581,10 @@ async function playTurn(page) {
   fightMem.ehp = st.enemies.reduce((a, e) => a + e.hp + e.prot, 0);
   fightMem.minHp = Math.min(fightMem.minHp ?? 1, st.hp / st.max); // pire moment du combat, pour la part de vitalite
   fightMem.foes = st.enemies.map((e) => e.name); // pour ranger l'indice de defaite par monstre
+  if (st.turn <= 1 && S.zone) { // resistances moyennes de la zone (1er tour, une fois par combat)
+    const R = (((S.learn ??= {}).res ??= {})[S.zone] ??= {});
+    for (const e of st.enemies) for (const [el, v] of Object.entries(e.res)) R[el] = R[el] == null ? v : 0.8 * R[el] + 0.2 * v;
+  }
   const ruled = st.enemies.filter((e) => e.hp > 0 && rulesOf(e.name).altElem).map((e) => e.name);
   const hurt = st.enemies.filter((e) => e.hp > 0 && rulesOf(e.name).healHurtFrom).map((e) => `${e.name} (tour ${rulesOf(e.name).healHurtFrom})`);
   if (hurt.length && !fightMem.hurtSaid) { fightMem.hurtSaid = true; decide(`Mecanique ${hurt.join(', ')} (indice) : plus aucun soin ni vol de vie a partir de ce tour`); }
@@ -673,6 +678,7 @@ async function allZones(page) {
 // palier de zone suivant (dir 1) ou precedent (dir -1) par niveau max ; reste sur place en bout de liste
 async function climbZone(page, cur, dir, why) {
   const z = await allZones(page);
+  if (!S.queue.includes('deck')) S.queue.push('deck'); // nouvelles resistances : deck revu
   if (xpHard && dir > 0) { // XP hard : par niveau MIN (plancher des monstres), saut croissant : mon niveau + 5 x victoires, et toujours au-dessus de la zone actuelle
     const curMin = z.find(([h]) => h === cur)?.[3] ?? 0;
     const target = Math.max(curMin + 5, S.level + 5 * xpHardWins);
@@ -880,6 +886,9 @@ if (process.argv[2] === 'test') {
   }
   assert.deepEqual(parseForge('Bouclier de forge · niveau 1\n+1 % de stats sur tout ton équipement\nNiveau 1 / 200\nOrbes d’amélioration\n12\nEncore 1 488 orbes à gagner aujourd’hui\nNiveau 1 → 2 : 1 orbe par essai, 100 % de réussite'), { level: 1, orbs: 12, left: 1488, cost: 1, rate: 100, bonus: 1 });
   { const saved = S.learn; S.learn = { build: { minHp: 0.3, loss: 0.2, n: 20 } }; assert.equal(vitShareNow(), Math.min(0.6, CFG.vitShare + 0.15)); S.learn = { build: { minHp: 0.9, loss: 0, n: 20 } }; assert.equal(vitShareNow(), Math.max(0.05, CFG.vitShare - 0.1)); S.learn = saved; }
+  { const saved = [S.learn, S.zone]; S.zone = '/chasse?zone=1'; S.learn = { res: { '/chasse?zone=1': { Air: -17, Feu: 50 } } };
+    const st0 = { ...NO_STATS, dmg: {} };
+    assert.ok(cardValue(parseCard('3 X 20 à 22 dommages Air'), st0) > 2 * cardValue(parseCard('3 Y 20 à 22 dommages Feu'), st0)); [S.learn, S.zone] = saved; }
   const it = { fav: false, rarity: 'COMMUN', name: 'Coiffe Bouftou', partial: false };
   assert.deepEqual([canSell(it), canSell({ ...it, rarity: 'RARE' }), canSell({ ...it, name: 'Coiffe Bouftou · Tiers 2' }), canSell({ ...it, name: 'Gelano' }), canSell({ ...it, partial: true }), canSell({ ...it, fav: true })], [true, false, false, false, false, false]);
   setEnergy(0, 200); S.energyAt -= 2.5 * REGEN; assert.equal(energyNow(), 2);
@@ -1468,6 +1477,7 @@ while (true) {
         decide(`Zone : ${best[0].split('=')[1]} rapporte ${Math.round(best[1].xpm)} XP/min contre ${Math.round(cur.xpm)} ici (victoires ${Math.round(best[1].win * 100)} %), j'y vais`);
         log(`ZONE meilleure XP/min ${best[0]} (${Math.round(best[1].xpm)} vs ${Math.round(cur.xpm)})`);
         zone = best[0]; climbHist = []; climbStreak = 0;
+        if (!S.queue.includes('deck')) S.queue.push('deck');
       }
     }
     if (CFG.hardEvery && CFG.manualFight && !xpHard && zone && !adventure && !S.recharging && S.level - (S.learn?.hard?.lvl ?? 0) >= CFG.hardEvery) {
