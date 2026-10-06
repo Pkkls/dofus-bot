@@ -17,7 +17,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200] }; // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -888,10 +888,10 @@ async function gate() {
   }
 }
 // achat retente au plus toutes les 5 min pendant une recharge ; ponytail: prix 300 K le point en dur ici, buyEnergy relit le vrai prix
-const canBuyEnergy = () => CFG.energyBuy && S.kamas - 3000 >= CFG.kamasReserve && Date.now() - (S.last.energie ?? 0) > 300000;
-// a la reserve : lit l'energie exacte, et si CFG.energyBuy, achete +10 sans toucher a kamasReserve
+const canBuyEnergy = () => CFG.energyBuy && (S.kamas - 3000 >= CFG.energyKamas || Date.now() - (S.last.venteEnergie ?? 0) > 1800000) && Date.now() - (S.last.energie ?? 0) > 300000;
+// a la reserve : lit l'energie exacte, et si CFG.energyBuy, achete +10 sans toucher a energyKamas ; kamas trop justes : passe de vente d'abord (30 min mini entre deux)
 // max (bouton du tableau de bord) : le plein, autant que les kamas le permettent
-async function buyEnergy(page, max = false) {
+async function buyEnergy(page, max = false, sold = false) {
   await page.goto(BASE + '/jeu', { waitUntil: 'networkidle' });
   await page.getByText(/^Acheter \(/).waitFor({ timeout: 20000 });
   await sleep(2000); // clic ignore tant que la page n'est pas hydratee
@@ -911,8 +911,14 @@ async function buyEnergy(page, max = false) {
   }
   if (!j || j.e > CFG.energyReserve) return;
   if (!CFG.energyBuy) { decide(`Energie ${j.e}/${j.max} : achat coupe (reglage), j'attends la recharge`); return; }
-  if (j.left < 10 || S.kamas - 10 * j.price < CFG.kamasReserve) { decide(`Energie ${j.e}/${j.max} : pas d'achat (${S.kamas} K, reserve ${CFG.kamasReserve} K, quota ${j.left})`); return; }
-  decide(`Energie ${j.e}/${j.max} : j'achete +10 (${10 * j.price} K), il reste ${S.kamas - 10 * j.price} K au-dessus de la reserve de ${CFG.kamasReserve} K`);
+  if (j.left >= 10 && S.kamas - 10 * j.price < CFG.energyKamas && !sold && Date.now() - (S.last.venteEnergie ?? 0) > 1800000) {
+    S.last.venteEnergie = Date.now();
+    decide(`Energie ${j.e}/${j.max} : ${S.kamas} K, trop juste pour +10 (reserve ${CFG.energyKamas} K) : je vends les objets inutiles d'abord`);
+    await safe('inventaire', equipFromInventory(page));
+    return buyEnergy(page, false, true);
+  }
+  if (j.left < 10 || S.kamas - 10 * j.price < CFG.energyKamas) { decide(`Energie ${j.e}/${j.max} : pas d'achat (${S.kamas} K, reserve energie ${CFG.energyKamas} K, quota ${j.left})`); return; }
+  decide(`Energie ${j.e}/${j.max} : j'achete +10 (${10 * j.price} K), il reste ${S.kamas - 10 * j.price} K (reserve energie ${CFG.energyKamas} K)`);
   await page.locator('button', { hasText: /^\+10 ·/ }).click(); // nom accessible = aria-label "3 000 kamas", d'ou hasText
   const ok = page.getByRole('button', { name: /^Confirmer/ });
   if (await ok.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await ok.click();
