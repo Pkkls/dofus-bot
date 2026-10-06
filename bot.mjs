@@ -895,8 +895,8 @@ async function fightArena(page) {
 
 // HDV : achete de quoi remplir les emplacements vides (vus par la passe inventaire), dans le budget au-dessus de la reserve
 // ponytail: emplacements vides seulement, l'HDV ne montre pas de comparaison avec la piece portee
-const parseHdvRows = (t) => [...t.matchAll(/\n([^\n]+)\nNiveau (\d+) · vendu par [^\n]*\n([\d\s]+) K\n(Acheter|Trop cher)/g)]
-  .map((m, idx) => ({ idx, raw: m[1], name: m[1].replace(/ · Rayonnant$/, ''), level: +m[2], price: +m[3].replace(/\D/g, ''), buyable: m[4] === 'Acheter' }));
+const parseHdvRows = (t) => [...t.matchAll(/\n([^\n]+)\n(?:Niveau (\d+) · vendu par [^\n]*|Niv\. (\d+) · [^\n]+\npar [^\n]*)\n([\d\s\u00a0\u202f]+) K\n(Acheter|Trop cher)/g)]
+  .map((m, idx) => ({ idx, raw: m[1], name: m[1].replace(/ · Rayonnant$/, ''), level: +(m[2] ?? m[3]), price: +m[4].replace(/\D/g, ''), buyable: m[5] === 'Acheter' }));
 // HDV (prix bas, pas d'economie) : pour chaque emplacement au score connu, l'annonce de mon niveau au meilleur gain par kama
 // gain = score brut de l'annonce - score de la piece portee (S.worn, 0 si vide) ; seuil : +10 % de la piece ou +10
 // panneau de detail d'une annonce : "Nom\nRARETE\nEmplacement\nNiveau N\n+stats..." jusqu'a l'annonce suivante ; null si absent
@@ -914,10 +914,13 @@ async function hdvBuy(page) {
     const budget = S.kamas - CFG.kamasReserve;
     if (budget <= 0) { log(`HDV : budget nul (reserve ${CFG.kamasReserve})`); return; }
     await page.goto(BASE + '/hdv');
-    await page.getByRole('button', { name: 'Filtrer' }).waitFor({ timeout: 20000 });
+    await page.getByText(/\d+ offres/).first().waitFor({ timeout: 20000 });
     const main = page.locator('main');
-    await main.locator('select').first().selectOption({ label: slot });
-    await page.getByRole('button', { name: 'Filtrer' }).click();
+    // nouvelle interface (06/10) : "Equipables par moi" coche, tri prix croissant, pastille du type
+    const mine = page.getByLabel(/Équipables par moi/);
+    if (await mine.count() && !(await mine.isChecked().catch(() => true))) await mine.check().catch(() => {});
+    await main.locator('select').filter({ hasText: 'Prix croissant' }).first().selectOption({ label: 'Tri : Prix croissant' }).catch(() => {});
+    await main.locator('button').filter({ hasText: new RegExp(`^\\s*${slot.replace('/', '\\/')}\\s*\\d*\\s*$`) }).first().click({ timeout: 5000 }).catch(() => {});
     await sleep(2500);
     const all = parseHdvRows('\n' + await main.innerText());
     seenRows.push(`${slot} : ${all.length} annonces, ${all.filter((x) => x.buyable && x.level <= S.level && x.price <= budget).length} dans niveau+budget (niv ${S.level}, budget ${budget})`);
@@ -927,7 +930,8 @@ async function hdvBuy(page) {
     let best = null;
     for (const r of all.filter((x) => x.buyable && x.level <= S.level && x.price <= budget).sort((a, b) => a.price - b.price).slice(0, 15)) {
       const row = rowOf(r);
-      await row.locator('button:has(img)').first().click().catch(() => {}); // ouvre les stats de l'objet
+      if (await row.locator('button:has(img)').count()) await row.locator('button:has(img)').first().click().catch(() => {}); // ouvre les stats de l'objet
+      else await main.getByText(r.raw, { exact: true }).nth(all.filter((x) => x.raw === r.raw && x.idx < r.idx).length).click().catch(() => {});
       await sleep(600);
       const rt = hdvStats(await main.innerText(), r.name); // les stats s'affichent dans un panneau a part, pas dans la ligne
       const s = (rt == null ? -Infinity : scoreItem(rt)) - worn; // gain sur la piece portee ; seules les lignes "+N Stat" comptent
@@ -964,6 +968,12 @@ async function hdvBuy(page) {
     bought++;
   }
   writeFileSync('dump/hdv_eval.txt', seenRows.join('\n'));
+  if (!existsSync('dump/hdv_vendre2.txt')) { // interface de vente jamais vue : capture
+    await page.locator('main').locator('button, a').filter({ hasText: /^\s*Vendre\s*$/ }).first().click({ timeout: 5000 }).catch(() => {});
+    await sleep(2500);
+    writeFileSync('dump/hdv_vendre2.txt', `${await page.locator('main').innerText().catch(() => '')}\n\n=== BOUTONS / CHAMPS\n${await page.locator('main').locator('button, input, select, label').evaluateAll((els) => els.map((e) => `${e.tagName}${e.type ? '[' + e.type + ']' : ''} "${(e.innerText || e.value || e.placeholder || '').replace(/\s+/g, ' ').slice(0, 80)}" ${e.getAttribute('aria-label') || e.title || ''}`).join('\n')).catch(() => '')}`);
+    log('HDV interface de vente capturee : dump/hdv_vendre2.txt');
+  }
   return bought;
 }
 
@@ -991,6 +1001,7 @@ if (process.argv[2] === 'test') {
   assert.deepEqual([AR.elo, AR.opti, AR.rank, AR.energy, AR.opp.length, AR.opp[1].name, AR.opp[1].opti], [985, 2302, '6145', 148, 2, 'Pad', 2036]);
   const HR = parseHdvRows('\nFiltrer\nYugoufle\nNiveau 41 · vendu par Hadu\n300 K\nAcheter\n★\nKompost · Rayonnant\nNiveau 60 · vendu par Ouateu\n1 500 K\nTrop cher');
   assert.deepEqual(HR.map((r) => [r.name, r.level, r.price, r.buyable]), [['Yugoufle', 41, 300, true], ['Kompost', 60, 1500, false]]);
+  assert.deepEqual(parseHdvRows('\n400 offres\nSoubretture\nNiv. 10 · Ceinture\npar Kkkkkk\n750 K\nAcheter').map((r) => [r.name, r.level, r.price, r.buyable]), [['Soubretture', 10, 750, true]]);
   assert.equal(hdvStats('\nFiltrer\nSac du Récolteur\nNiveau 15 · vendu par T\n300 K\nAcheter\nSac du Récolteur\nRARE\nCape\nNiveau 15\n+400 Pods\n+20 Vitalité\nYugoufle\nNiveau 41 · vendu par H\n300 K\nAcheter', 'Sac du Récolteur'), '+400 Pods\n+20 Vitalité');
   assert.ok(scoreItem('Comparé à X\n+1 PM\n+10 Vitalité\n+10 Sagesse\n+10 Puissance\n-3 Dommages\n+2% Résistance Terre\n-4 Tacle') > 0);
   assert.ok(scoreItem('Comparé à X\n-40 Vitalité\n-10 Sagesse\n-25 Intelligence\n+60 Agilité\n+1% Critique\n+4 Dommages\n-5 Dommages Feu') < 30);
@@ -1510,7 +1521,7 @@ let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
-  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, abysses: startAbyss, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
+  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: (p) => { S.hdvBrokenUntil = 0; return hdvBuy(p); }, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, abysses: startAbyss, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
   aventure: async (p) => { huntLeft = 0; S.advBlockedUntil = 0; xpHard = false; S.xpHard = false; return goAdventure(p); }, // l'aventure reste ensuite prioritaire (wantAdventure)
 };
