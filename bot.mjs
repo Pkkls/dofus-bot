@@ -1812,7 +1812,7 @@ while (true) {
     if (++combats % CFG.passEvery === 0) deckDue = true;
     const win = /Victoire !/.test(text) && !/Défaite/.test(text);
     const num = (s) => s.replace(/\D/g, '');
-    const g = text.match(/\+([\d\s]+?) XP\s*\+([\d\s]+?) kamas/);
+    const g = text.match(/\+([\d\s  ]+?)\s*XP\s*\+([\d\s  ]+?)\s*kamas/i); // "+7 800 XP +339 kamas" ou, depuis le 07/10, "+7 800\nXP\n+339\nKAMAS"
     if (win && !g && !existsSync('dump/victoire.txt')) writeFileSync('dump/victoire.txt', text.slice(0, 5000)); // ecran de fin refait : capture pour relire l'XP
     if (!fight && win && g) { const L = (S.learn ??= {}); const x = +g[1].replace(/\D/g, ''); L.xpf = L.xpf ? 0.9 * L.xpf + 0.1 * x : x; } // XP moyenne par victoire de chasse (validation sagesse)
     if (!fight && S.attackZone && S.attackAt && Date.now() - S.attackAt < 900000) { // stats de zone (chasse) : moyennes glissantes
