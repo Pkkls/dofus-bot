@@ -114,7 +114,7 @@ const parseCard = (txt) => {
 const cardValue = (c, s) => {
   if (!c.dmg) return 0;
   const e = c.dmg.elem;
-  const v = c.dmg.avg * (1 + ((s[ELEM_STAT[e]] ?? 0) + s.Puissance) / 100) + (s.dmg[e] ?? 0);
+  const v = (c.dmg.avg * (1 + ((s[ELEM_STAT[e]] ?? 0) + s.Puissance) / 100) + (s.dmg[e] ?? 0)) * (S.learn?.k?.[e] ?? 1); // x correctif appris en combat (reel / prevu)
   return (v * (c.dmg.zone ? 1.15 : 1) * (c.dmg.steal ? 1.1 : 1)) / c.cost;
 };
 const chooseDeck = (deck, pool, s) => {
@@ -397,6 +397,14 @@ async function openChests(page) {
   if (opened || bought) log(`COFFRES ouverts ${opened}, achetes ${bought}`);
 }
 
+// part de vitalite adaptee aux combats : PV mini moyens bas ou defaites -> plus de vitalite ; marge confortable -> plus de degats
+const vitShareNow = () => {
+  const B = S.learn?.build;
+  if (!B || B.n < 10) return CFG.vitShare;
+  const adj = B.loss > 0.15 || B.minHp < 0.35 ? 0.15 : B.minHp < 0.5 ? 0.05 : B.minHp > 0.75 && B.loss < 0.05 ? -0.1 : 0;
+  return Math.min(0.6, Math.max(0.05, CFG.vitShare + adj));
+};
+const vitWhy = () => { const B = S.learn?.build; return B?.n >= 10 ? `PV mini moyens ${Math.round(B.minHp * 100)} %, defaites ${Math.round(B.loss * 100)} %` : 'reglage de base'; };
 // Points de carac : 80 % dans la stat de l'element dominant du deck, CFG.vitShare en Vitalite
 const mainStat = () => Object.entries(STAT_ELEM).map(([s, es]) => [s, es.reduce((a, e) => a + ELEM_SHARE[e], 0)]).sort((a, b) => b[1] - a[1])[0][0];
 async function allocateStats(page) {
@@ -406,8 +414,9 @@ async function allocateStats(page) {
   const total = await pts();
   if (!total) return;
   const main = mainStat();
-  decide(`Caracs : ${total} points, d'abord ${Math.round(CFG.vitShare * 100)} % en Vitalite, le reste en ${main} (element principal du deck)`);
-  for (const [stat, want] of [['Vitalité', Math.floor(total * CFG.vitShare)], [main, Infinity]]) { // Vitalite d'abord : 1 pt fixe, la stat principale a des paliers
+  const vit = vitShareNow();
+  decide(`Caracs : ${total} points, ${Math.round(vit * 100)} % en Vitalite (${vitWhy()}), le reste en ${main} (element principal du deck)`);
+  for (const [stat, want] of [['Vitalité', Math.floor(total * vit)], [main, Infinity]]) { // Vitalite d'abord : 1 pt fixe, la stat principale a des paliers
     if (!(await pts())) break; // les paliers de cout peuvent tout consommer sur la stat principale
     const input = page.getByLabel(`Points à ajouter en ${stat}`);
     const max = +((await input.locator('xpath=following::button[starts-with(normalize-space(), "max")][1]').innerText()).match(/\d+/)?.[0] ?? 0);
@@ -568,6 +577,7 @@ async function playTurn(page) {
   const s = S.stats ?? NO_STATS;
   if (st.turn <= 1 || !fightMem.profile) fightMem = { turn: st.turn, endHp: null, inc: 0, profile: trainLeft > 0 ? pickTrainProfile() : pickProfile(), ehp0: st.enemies.reduce((a, e) => a + e.max, 0) };
   fightMem.ehp = st.enemies.reduce((a, e) => a + e.hp + e.prot, 0);
+  fightMem.minHp = Math.min(fightMem.minHp ?? 1, st.hp / st.max); // pire moment du combat, pour la part de vitalite
   fightMem.foes = st.enemies.map((e) => e.name); // pour ranger l'indice de defaite par monstre
   const ruled = st.enemies.filter((e) => e.hp > 0 && rulesOf(e.name).altElem).map((e) => e.name);
   const hurt = st.enemies.filter((e) => e.hp > 0 && rulesOf(e.name).healHurtFrom).map((e) => `${e.name} (tour ${rulesOf(e.name).healHurtFrom})`);
@@ -687,6 +697,7 @@ async function attackGroup(page, zone, maxRank) {
   decide(`Groupe ${i + 1} attaque : le plus gros dont la difficulte <= ${RANK[maxRank]}`);
   await page.getByRole('button', { name: 'Attaquer' }).nth(i).click();
   log(`ATTAQUE ${zone} groupe ${i + 1}`);
+  S.attackAt = Date.now(); S.attackZone = zone; // XP/min par zone
   return true;
 }
 
@@ -858,6 +869,7 @@ if (process.argv[2] === 'test') {
     assert.ok(hurt.plan.includes('Secourisme'), JSON.stringify(hurt.plan)); // en danger : soin
   }
   assert.deepEqual(parseForge('Bouclier de forge · niveau 1\n+1 % de stats sur tout ton équipement\nNiveau 1 / 200\nOrbes d’amélioration\n12\nEncore 1 488 orbes à gagner aujourd’hui\nNiveau 1 → 2 : 1 orbe par essai, 100 % de réussite'), { level: 1, orbs: 12, left: 1488, cost: 1, rate: 100, bonus: 1 });
+  { const saved = S.learn; S.learn = { build: { minHp: 0.3, loss: 0.2, n: 20 } }; assert.equal(vitShareNow(), Math.min(0.6, CFG.vitShare + 0.15)); S.learn = { build: { minHp: 0.9, loss: 0, n: 20 } }; assert.equal(vitShareNow(), Math.max(0.05, CFG.vitShare - 0.1)); S.learn = saved; }
   const it = { fav: false, rarity: 'COMMUN', name: 'Coiffe Bouftou', partial: false };
   assert.deepEqual([canSell(it), canSell({ ...it, rarity: 'RARE' }), canSell({ ...it, name: 'Coiffe Bouftou · Tiers 2' }), canSell({ ...it, name: 'Gelano' }), canSell({ ...it, partial: true }), canSell({ ...it, fav: true })], [true, false, false, false, false, false]);
   setEnergy(0, 200); S.energyAt -= 2.5 * REGEN; assert.equal(energyNow(), 2);
@@ -1177,7 +1189,7 @@ let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, l
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
 let clickFails = []; // clics expires recents (fenetre inconnue)
 // XP hard (bouton) : plus gros groupes, palier suivant a chaque victoire, 1re defaite -> un cran plus bas puis montee normale
-let xpHard = false;
+let xpHard = false, zoneCheck = 0;
 const grpRank = () => (xpHard ? 3 : strikes ? 0 : CFG.maxGroup);
 let paced = false, throwChecked = false; // rythme : ecart deja fait sur cet ecran de fin ; abandon deja tire pour ce combat
 let trainLeft = 0, trainZone = null, climbStreak = 0, climbDir = 0, climbHist = [], lastLevel = 0; // entrainement demande depuis le tableau de bord
@@ -1255,6 +1267,12 @@ while (true) {
     const win = /Victoire !/.test(text) && !/Défaite/.test(text);
     const num = (s) => s.replace(/\D/g, '');
     const g = text.match(/\+([\d\s]+?) XP\s*\+([\d\s]+?) kamas/);
+    if (!fight && S.attackZone && S.attackAt && Date.now() - S.attackAt < 900000) { // stats de zone (chasse) : moyennes glissantes
+      const Z = (((S.learn ??= {}).zones ??= {})[S.attackZone] ??= { n: 0, win: 0.9, xpm: 0, lvl: S.level });
+      const xpm = (win && g ? +g[1].replace(/\D/g, '') : 0) / ((Date.now() - S.attackAt) / 60000);
+      Z.n++; Z.win = 0.85 * Z.win + 0.15 * (win ? 1 : 0); Z.xpm = Z.n === 1 ? xpm : 0.8 * Z.xpm + 0.2 * xpm; Z.lvl = S.level;
+      S.attackAt = 0;
+    }
     S.combats = combats;
     fightTimes.push(Date.now());
     spendEnergy(fight === 'boss' || fight === 'arene' ? 2 : 1);
@@ -1304,6 +1322,10 @@ while (true) {
       decide(`Entrainement (${fightMem.profile}) : ${win ? 'victoire' : 'defaite'}, tenu ${fightMem.turn} tours, ${Math.round(dmgFrac * 100)} % des PV ennemis ; moyenne du style ${(t.turns / t.n).toFixed(1)} tours sur ${t.n} essais ; reste ${trainLeft}`);
       log(`ENTRAINEMENT ${fightMem.profile} ${fightMem.turn} tours ${Math.round(dmgFrac * 100)} %`);
       fightMem = { turn: 0, endHp: null, inc: 0, profile: null };
+    }
+    if (fightMem.profile && fight !== 'entrainement') { // build : moyenne glissante des PV mini et des defaites (combats manuels)
+      const B = ((S.learn ??= {}).build ??= { minHp: 0.6, loss: 0, n: 0 });
+      B.minHp = 0.9 * B.minHp + 0.1 * (win ? fightMem.minHp ?? 1 : 0); B.loss = 0.9 * B.loss + 0.1 * (win ? 0 : 1); B.n++;
     }
     if (fightMem.profile) { rewardProfile(fightMem.profile, win, fightMem.turn); const p = S.learn.prof[fightMem.profile]; decide(`Style ${fightMem.profile} : ${win ? 'victoire' : 'defaite'} en ${fightMem.turn} tours (${p.w}/${p.n} gagnes)`); fightMem = { turn: 0, endHp: null, inc: 0, profile: null }; }
     if (fight === 'boss') S.boss = { ...S.boss, live: false, last: win ? 'victoire' : 'defaite' };
@@ -1380,6 +1402,17 @@ while (true) {
       climbDir = 0;
       await attackGroup(page, zone, grpRank());
       continue;
+    }
+    // meilleure zone connue : XP/min la plus haute parmi celles gagnees au taux vise, mesurees recemment (niveau proche)
+    if (!xpHard && zone && !adventure && !climbDir && ++zoneCheck >= 20) {
+      zoneCheck = 0;
+      const Z = S.learn?.zones ?? {}, cur = Z[zone];
+      const best = Object.entries(Z).filter(([, z]) => z.n >= 5 && z.win >= CFG.targetWin && Math.abs(z.lvl - S.level) <= 10).sort((a, b) => b[1].xpm - a[1].xpm)[0];
+      if (best && best[0] !== zone && cur && best[1].xpm > 1.2 * cur.xpm) {
+        decide(`Zone : ${best[0].split('=')[1]} rapporte ${Math.round(best[1].xpm)} XP/min contre ${Math.round(cur.xpm)} ici (victoires ${Math.round(best[1].win * 100)} %), j'y vais`);
+        log(`ZONE meilleure XP/min ${best[0]} (${Math.round(best[1].xpm)} vs ${Math.round(cur.xpm)})`);
+        zone = best[0]; climbHist = []; climbStreak = 0;
+      }
     }
     if (siteScanDue) { siteScanDue = false; await safe('site', siteScan(page)); await page.goto(COMBAT).catch(() => {}); continue; }
     if (trainLeft > 0 && CFG.manualFight) {

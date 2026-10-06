@@ -347,6 +347,8 @@ details[open].card > summary .chev { transform: rotate(180deg); }
           <dt>Rythme</dt><dd id="m-pace">-</dd>
           <dt>HDV</dt><dd id="m-hdv">-</dd>
           <dt>Forge</dt><dd id="m-forge">-</dd>
+          <dt>Build</dt><dd id="m-build">-</dd>
+          <dt>Meilleures zones (XP/min)</dt><dd id="m-zones">-</dd>
         </dl>
           <div class="muted" style="margin:12px 0 6px">Styles appris (victoires, recompense moyenne)</div>
           <div class="cards" id="m-prof"></div>
@@ -650,6 +652,10 @@ function render(d) {
   $('m-hdv').textContent = S.hdvBrokenUntil > now ? `achat en panne cote site, essai vers ${hm(S.hdvBrokenUntil)}` : 'actif';
   const F = S.forge, LF = L.forge;
   $('m-forge').textContent = F ? `bouclier niv ${F.level} (+${F.bonus} %), ${F.orbs} orbes, quota ${Number.isFinite(F.left) ? F.left : '?'}${LF?.broken ? `, ${LF.broken} brises (+${LF.orbsGained})` : ''}${LF?.tries ? `, reussite ${LF.ok}/${LF.tries}` : ''}` : 'pas encore visitee';
+  const B = L.build;
+  $('m-build').textContent = B?.n ? `PV mini moyens ${pct(B.minHp)}, defaites ${pct(B.loss)} sur ${B.n} combats` : 'en cours d\'apprentissage';
+  const zs = Object.entries(L.zones ?? {}).filter(([, z]) => z.n >= 3).sort((a, z) => z[1].xpm - a[1].xpm).slice(0, 3);
+  $('m-zones').textContent = zs.length ? zs.map(([k, z]) => `${k.split('=')[1]}: ${fmt(z.xpm)} (${pct(z.win)})`).join(' · ') : 'en cours de mesure';
   const pk = Object.entries(prof).sort((a, z) => z[1].r / z[1].n - a[1].r / a[1].n);
   $('m-prof').innerHTML = pk.map(([k, p], i) => `<div class="cardx"><span class="cost">${i + 1}</span><span class="n">${esc(k)}${L.train?.[k] ? ` <span class="muted">· entrainement ${(L.train[k].turns / L.train[k].n).toFixed(1)} tours</span>` : ''}</span><span class="m num">${p.w}/${p.n} · ${(p.r / p.n).toFixed(2)}</span></div>`).join('') || '<div class="empty" style="padding:0">Apres les premiers combats manuels.</div>';
   $('m-k').innerHTML = Object.entries(L.k ?? {}).map(([e, v]) => `<span><i class="edot" style="background:${ELEM[e]}"></i>${e} x${v.toFixed(2)}</span>`).join('') || 'en cours d\'apprentissage';
