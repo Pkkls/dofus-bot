@@ -61,7 +61,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['stats', 'learn', 'hints', 'worn', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -698,6 +698,7 @@ const hdvStats = (t, name) => {
   return m ? m[1] : null;
 };
 async function hdvBuy(page) {
+  if (Date.now() < (S.hdvBrokenUntil ?? 0)) { decide(`HDV saute : achat en panne cote site (bouton Acheter sans effet), nouvel essai vers ${new Date(S.hdvBrokenUntil).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`); return 0; }
   let bought = 0; const seenRows = []; // seenRows : diagnostic dump/hdv_eval.txt
   const slots = [...new Set([...(S.emptySlots ?? []), ...Object.keys(S.worn ?? {})])].filter((s) => SLOTS.includes(s));
   for (const slot of slots) {
@@ -727,12 +728,31 @@ async function hdvBuy(page) {
     }
     if (!best) { decide(`HDV ${slot} : rien de mieux que ma piece (score ${worn}) dans mon niveau sous ${Math.round(budget / 1000)} k`); continue; }
     decide(`HDV ${slot} : ${best.r.name} niv ${best.r.level}, +${Math.round(best.s)} sur ma piece (${worn}) pour ${best.r.price} K, meilleur gain par kama`);
-    await rowOf(best.r).getByRole('button', { name: 'Acheter', exact: true }).click();
-    const ok = main.getByRole('button', { name: /^Confirmer/ });
-    if (await ok.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await ok.click();
+    const kamasHdv = async () => +((await main.innerText()).match(/\n([\d\s  ]+) kamas\n/)?.[1].replace(/\D/g, '') ?? NaN);
+    const k0 = await kamasHdv();
+    const buyBtn = rowOf(best.r).getByRole('button', { name: 'Acheter', exact: true });
+    const nBtn = await buyBtn.count();
+    const posts = [];
+    const onResp = async (r) => { if (r.request().method() === 'POST') posts.push(`${r.status()} ${r.url().slice(-60)} :: ${(await r.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 600)}`); };
+    page.on('response', onResp);
+    await buyBtn.first().click();
+    await sleep(2500);
+    page.off('response', onResp);
+    // la confirmation peut etre une modale hors de main : on cherche dans toute la page
+    const after = `${await page.locator('body > *:not(main)').allInnerTexts().then((a) => a.join(' | ')).catch(() => '')}\n--- boutons hors main: ${await page.locator('button:visible').evaluateAll((els) => els.filter((e) => !e.closest('main')).map((e) => e.innerText.replace(/\s+/g, ' ').trim()).filter(Boolean).join(' | '))}`;
+    const ok = page.getByRole('button', { name: /^(Confirmer|Oui|Valider|Payer)/ });
+    if (await ok.first().waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await ok.first().click();
     await sleep(1500);
-    S.kamas -= best.r.price;
-    log(`HDV achat ${slot}: ${best.r.name} niv ${best.r.level} (gain +${Math.round(best.s)}, ${best.r.price} K)`);
+    const k1 = await kamasHdv();
+    if (!(k1 < k0)) { // pas debite : achat rate, on garde la trace de ce que la page a affiche
+      writeFileSync('dump/hdv_buy.txt', `${best.r.name} ${best.r.price} K | boutons Acheter dans la ligne: ${nBtn} | kamas ${k0} -> ${k1} | enabled ${await buyBtn.first().isEnabled().catch(() => '?')}\n\nPOST au clic (${posts.length}):\n${posts.join('\n')}\n\nApres clic:\n${after.slice(0, 1500)}`);
+      log(`HDV achat rate ${slot}: ${best.r.name} (${best.r.price} K), kamas ${k0} -> ${k1}, voir dump/hdv_buy.txt - HDV en pause 6 h`);
+      S.hdvBrokenUntil = Date.now() + 6 * 3600000; // bug du site (06/10 : clic Acheter sans requete, meme a la main) : on ne perd pas de temps
+      break;
+      continue;
+    }
+    S.kamas = k1;
+    log(`HDV achat ${slot}: ${best.r.name} niv ${best.r.level} (gain +${Math.round(best.s)}, ${best.r.price} K, kamas ${k0} -> ${k1})`);
     bought++;
   }
   writeFileSync('dump/hdv_eval.txt', seenRows.join('\n'));
@@ -973,6 +993,10 @@ startDashboard(page);
 await page.route(/\/img\//, (route) => (blockable(route.request().url()) ? route.abort() : route.continue()));
 page.on('request', (r) => { if (!r.url().startsWith(BASE)) return; if (blockable(r.url())) { NET.blocked++; return; } /* bloquee : jamais envoyee */ const k = netKind(r); NET.total++; NET.by[k]++; NET.recent.push([Date.now(), k]); });
 page.on('response', (r) => { if (r.status() === 429 && r.url().startsWith(BASE)) NET.r429++; });
+// enregistreur de debug (fichier "record" present) : clics et POST vers dump/record.txt, pour copier un geste fait a la main
+await page.addInitScript(() => document.addEventListener('click', (e) => { const b = e.target.closest('button, a') ?? e.target; console.log('REC click ' + b.outerHTML.replace(/\s+/g, ' ').slice(0, 400)); }, true));
+page.on('console', (m) => { if (existsSync('record') && m.text().startsWith('REC ')) appendFileSync('dump/record.txt', `${new Date().toISOString()} ${m.text()}\n`); });
+page.on('request', (r) => { if (existsSync('record') && r.method() === 'POST' && r.url().startsWith(BASE)) appendFileSync('dump/record.txt', `${new Date().toISOString()} POST ${r.url()} next-action=${r.headers()['next-action'] ?? '-'} body=${(r.postData() ?? '').slice(0, 600)}\n`); });
 // limiteur : avant chaque navigation, attend si le plafond de requetes/min est atteint
 const rawGoto = page.goto.bind(page);
 page.goto = async (...a) => {
