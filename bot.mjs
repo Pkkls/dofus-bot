@@ -284,7 +284,7 @@ async function optimizeRings(page, main) {
   const worn = () => main.locator('button').filter({ hasText: /(^|\s)Anneau$/ }).locator('img').evaluateAll((els) => els.map((e) => e.alt));
   const scoreOf = (n) => S.rings[n] ?? Object.entries(S.rings).find(([k]) => baseName(k) === n)?.[1];
   let sack = await scan();
-  for (let round = 0; round < 4 && sack.length; round++) {
+  for (let round = 0; round < 2 && sack.length; round++) { // 2 tours : chaque tour rouvre tous les anneaux du sac (lent)
     const [n1, n2] = await worn(), s = [scoreOf(n1), scoreOf(n2)];
     if ((!n1 || !n2) && S.emptySlots?.includes('Anneau')) { // emplacement libre (ex. apres un prestige) : le meilleur du sac y va, bouton "Equiper" simple
       const best = sack.reduce((a, b) => (b.own > a.own ? b : a));
