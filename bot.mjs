@@ -1266,7 +1266,8 @@ while (true) {
   presenceAlerted = false;
 
   const next = page.getByRole('button', { name: 'Suivant en auto' });
-  const endBtn = page.getByRole('button', { name: /^(Suivant en auto|Refaire ce combat|Étape suivante|Réessayer en auto|Réessayer l.étape|Retour.*|Continuer|Chasse libre|Autres groupes de la zone)$/ });
+  // boutons OU liens de fin de combat ("Retour a l'arene" est un lien) : sinon, apres un redemarrage, l'ecran de fin n'est pas reconnu
+  const endBtn = page.locator('main').locator('button, a').filter({ hasText: /^\s*(Suivant en auto|Refaire ce combat|Étape suivante|Réessayer en auto|Réessayer l.étape|Retour.*|Continuer|Chasse libre|Autres groupes de la zone)\s*$/ });
   const adventure = /Voir le Chemin/.test(text);
   if (/Victoire !|Défaite/.test(text) && !/À toi de jouer/.test(text) && (fight || await endBtn.first().isVisible().catch(() => false))) { // boss/arene : ecran de fin peut-etre sans bouton connu
     if (!endHandled) {
