@@ -1215,7 +1215,10 @@ const UNBLOCK_OK = /^(Retour|Continuer|Plus tard|Fermer|OK|Compris|J.ai compris|
 const UNBLOCK_NO = /Acheter|Vendre|Briser|Fuir|Déconnexion|Dissoudre|Réinitialiser|Supprimer|Abandonner|Payer|Discord|Défier|Améliorer|Fusionner|Équiper|Ouvrir/i;
 let unblockPending = null, unblockTried = new Set();
 async function unblock(page, text) {
-  const sig = `${new URL(page.url()).pathname} | ${(text.split('\n').map((l) => l.trim()).find((l) => l.length > 3 && !/DofusMasters|Annonce|Événement/.test(l)) ?? '').replace(/\d+/g, '#').slice(0, 50)}`;
+  // signature = chemin + titre de la page (contenu de main, hors en-tete/nom du perso), chiffres masques
+  const mainText = await page.locator('main').innerText().catch(() => text);
+  const title = mainText.split('\n').map((l) => l.trim()).find((l) => l.length > 3 && !(S.name && l.includes(S.name)) && !/DofusMasters|Annonce|Événement|Déconnexion/.test(l)) ?? '';
+  const sig = `${new URL(page.url()).pathname} | ${title.replace(/\d+/g, '#').slice(0, 50)}`;
   if (unblockPending) { // l'action precedente n'a rien change
     const U = (((S.learn ??= {}).unblock ??= {})[unblockPending.sig] ??= {})[unblockPending.act] ??= { ok: 0, ko: 0 };
     U.ko++; unblockTried.add(unblockPending.act); unblockPending = null;
