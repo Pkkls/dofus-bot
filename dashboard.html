@@ -487,6 +487,7 @@ const ACTS = {
   boss: ['Boss', 'crown', 'tenter maintenant'],
   forge: ['Forge', 'sparkles', 'ameliorer le bouclier'],
   energie: ['Energie max', 'zap', 'acheter le plein, 300 K le point'],
+  xphard: ['XP hard', 'swords', 'monter jusqu\'a la defaite puis s\'adapter'],
   entrainement: ['Entrainement', 'brain', 'combats perdus d\'avance pour apprendre'],
   zone: ['Zone facile', 'map', 'changer de zone'],
   aventure: ['Aventure', 'flag', 'retenter l\'etape'],
@@ -643,7 +644,7 @@ function render(d) {
   $('m-mode').textContent = CFG.manualFight ? 'manuel' : 'auto du jeu';
   const fn = S.fightNow;
   $('m-now').textContent = fn && now - fn.at < 120000 ? `tour ${fn.turn}, style ${fn.profile}${fn.foes?.length ? ' vs ' + fn.foes.join(', ') : ''}` : 'aucun';
-  $('m-rate').textContent = S.climb?.n ? `${pct(S.climb.rate)} sur ${S.climb.n}, cible ${pct(CFG.targetWin)}` : `cible ${pct(CFG.targetWin)}`;
+  $('m-rate').textContent = S.xpHard ? 'XP hard en cours : palier suivant a chaque victoire' : S.climb?.n ? `${pct(S.climb.rate)} sur ${S.climb.n}, cible ${pct(CFG.targetWin)}` : `cible ${pct(CFG.targetWin)}`;
   $('m-zone').textContent = S.zone ? S.zone.replace('/chasse?zone=', 'zone ') : '-';
   $('m-pace').textContent = `${(CFG.thinkMin / 1000).toFixed(1)}-${(CFG.thinkMax / 1000).toFixed(1)} s/carte, ${CFG.gapMin}-${CFG.gapMax} s entre combats, pause ${pct(CFG.breakChance)}, fuite ${pct(CFG.loseRate)}`;
   $('m-hdv').textContent = S.hdvBrokenUntil > now ? `achat en panne cote site, essai vers ${hm(S.hdvBrokenUntil)}` : 'actif';

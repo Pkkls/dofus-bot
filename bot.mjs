@@ -74,7 +74,7 @@ const KEEP = ['stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'd
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
-const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'entrainement', 'zone', 'aventure', 'f5'];
+const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'xphard', 'entrainement', 'zone', 'aventure', 'f5'];
 // horaires en minutes depuis minuit ; une plage peut passer minuit (ex. 540 -> 60 = 09:00 -> 01:00)
 const inWindow = (m, a, b) => a === b || (a < b ? m >= a && m < b : m >= a || m < b);
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -1176,13 +1176,16 @@ let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastTe
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
 let clickFails = []; // clics expires recents (fenetre inconnue)
+// XP hard (bouton) : plus gros groupes, palier suivant a chaque victoire, 1re defaite -> un cran plus bas puis montee normale
+let xpHard = false;
+const grpRank = () => (xpHard ? 3 : strikes ? 0 : CFG.maxGroup);
 let paced = false, throwChecked = false; // rythme : ecart deja fait sur cet ecran de fin ; abandon deja tire pour ce combat
 let trainLeft = 0, trainZone = null, climbStreak = 0, climbDir = 0, climbHist = [], lastLevel = 0; // entrainement demande depuis le tableau de bord
 let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
-  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
+  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, xphard: async () => { xpHard = true; S.xpHard = true; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
   aventure: async (p) => { huntLeft = 0; await p.goto(BASE + '/aventure'); await p.locator('button', { hasText: ADV_FIGHT }).first().click({ timeout: 20000 }); return true; },
 };
@@ -1266,7 +1269,10 @@ while (true) {
     else if (!adventure && !fight) {
       results.push(win); if (results.length > 10) results.shift(); winsSinceStrike = win ? winsSinceStrike + 1 : 0;
       // vise targetWin (pas 100 %) : sur les 20 derniers, au-dessus on monte, sous la cible -10 pts on redescend ; climbWins combats mini entre deux changements
-      if (CFG.climbWins) {
+      if (xpHard) {
+        if (win) climbDir = 1;
+        else { climbDir = -1; xpHard = false; S.xpHard = false; climbHist = []; climbStreak = 0; decide('XP hard : premiere defaite, je redescends d\'un palier et je reprends la montee normale (taux vise)'); log('XP HARD termine - defaite, palier precedent'); }
+      } else if (CFG.climbWins) {
         climbHist.push(win); if (climbHist.length > 20) climbHist.shift();
         const rate = climbHist.filter(Boolean).length / climbHist.length;
         S.climb = { rate, n: climbHist.length }; // tableau de bord
@@ -1370,9 +1376,9 @@ while (true) {
       continue;
     }
     if (climbDir && zone && !adventure) { // chasse : on monte tant qu'on gagne, on redescend a la premiere defaite
-      zone = await climbZone(page, zone, climbDir, `taux de victoire ${climbDir > 0 ? 'au-dessus de' : 'sous'} la cible ${Math.round(CFG.targetWin * 100)} %`);
+      zone = await climbZone(page, zone, climbDir, xpHard ? 'XP hard, victoire' : `taux de victoire ${climbDir > 0 ? 'au-dessus de' : 'sous'} la cible ${Math.round(CFG.targetWin * 100)} %`);
       climbDir = 0;
-      await attackGroup(page, zone, strikes ? 0 : CFG.maxGroup);
+      await attackGroup(page, zone, grpRank());
       continue;
     }
     if (siteScanDue) { siteScanDue = false; await safe('site', siteScan(page)); await page.goto(COMBAT).catch(() => {}); continue; }
@@ -1393,7 +1399,7 @@ while (true) {
     if (adventure && huntLeft > 0) {
       decide(`Rattrapage XP : encore ${huntLeft} victoires en chasse avant l'aventure`);
       zone = (await pickZone(page, null, false)) ?? zone;
-      await attackGroup(page, zone, strikes ? 0 : CFG.maxGroup);
+      await attackGroup(page, zone, grpRank());
       continue;
     }
     if (page.url() !== COMBAT) { await page.goto(COMBAT); continue; } // apres boss/deck, revient a l'ecran de fin
@@ -1402,7 +1408,7 @@ while (true) {
       decide('Combat suivant en manuel : Etape suivante');
       await step.click(); autoClicked = false; await sleep(3000);
     } else if (CFG.manualFight && zone) {
-      await attackGroup(page, zone, strikes ? 0 : CFG.maxGroup);
+      await attackGroup(page, zone, grpRank());
     } else if (await next.isVisible().catch(() => false)) {
       decide(`Rien a faire : combat suivant en Auto (passe dans ${CFG.passEvery - (combats % CFG.passEvery)} combats)`);
       await sleep(1000 + Math.random() * 2000);
@@ -1410,10 +1416,10 @@ while (true) {
       autoClicked = true; // "Suivant en auto" lance le combat suivant deja en Auto
       await sleep(3000);
     } else if (zone) {
-      await attackGroup(page, zone, strikes ? 0 : CFG.maxGroup);
+      await attackGroup(page, zone, grpRank());
     } else { // pas de bouton connu (fin d'arene ?) : retour en chasse dans la zone XP
       zone ??= await pickZone(page, null, false);
-      await attackGroup(page, zone, strikes ? 0 : CFG.maxGroup);
+      await attackGroup(page, zone, grpRank());
     }
     continue;
   }
@@ -1460,7 +1466,7 @@ while (true) {
     decide(stuck % 2 ? 'Page figee depuis 30 s : je relance un combat via la zone' : 'Page figee depuis 30 s : F5');
     if (++stuck % 2 === 0) { // 2e blocage : relance un combat via la zone (zone la plus facile si inconnue)
       zone ??= await pickZone(page, null, true).catch(() => null);
-      if (zone) await safe('attaque', attackGroup(page, zone, strikes ? 0 : CFG.maxGroup));
+      if (zone) await safe('attaque', attackGroup(page, zone, grpRank()));
     }
     else await page.goto(COMBAT).catch(() => {});
     autoClicked = false; idleSince = Date.now();
