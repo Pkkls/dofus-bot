@@ -26,6 +26,14 @@ const setEnergy = (n, max) => { S.energy = n; S.energyAt = Date.now(); if (max) 
 const energyNow = () => (S.energy == null ? null : Math.min(S.energyMax ?? Infinity, S.energy + Math.floor((Date.now() - (S.energyAt ?? Date.now())) / REGEN)));
 // rebase sans perdre le point en cours de recharge
 const spendEnergy = (n) => { if (S.energy == null) return; const e = energyNow(), at = S.energyAt ?? Date.now(); S.energyAt = Date.now() - (Date.now() - at) % REGEN; S.energy = Math.max(0, e - n); };
+const parseForge = (t) => ({
+  level: +(t.match(/Bouclier de forge · niveau (\d+)/)?.[1] ?? 0),
+  orbs: +(t.match(/Orbes d.amélioration\n([\d\s\u00a0\u202f]+)\n/)?.[1].replace(/\D/g, '') ?? 0),
+  left: +(t.match(/Encore ([\d\s\u00a0\u202f]+) orbes? à gagner aujourd/)?.[1].replace(/\D/g, '') ?? NaN),
+  cost: +(t.match(/(\d+) orbes? par essai/)?.[1] ?? 1),
+  rate: +(t.match(/(\d+) ?% de réussite/)?.[1] ?? 100),
+  bonus: +(t.match(/\+([\d.,]+) ?% de stats sur tout/)?.[1].replace(',', '.') ?? 0),
+});
 // /jeu : energie exacte (minuteur du prochain point), prix et quota d'achat du jour
 const parseJeu = (t) => {
   const m = t.match(/Énergie\n(\d+)\/(\d+)\n+(?:\+1 dans (?:(\d+) min)?\s*(\d+)?)?/);
@@ -62,11 +70,11 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
-const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'entrainement', 'zone', 'aventure', 'f5'];
+const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'entrainement', 'zone', 'aventure', 'f5'];
 // horaires en minutes depuis minuit ; une plage peut passer minuit (ex. 540 -> 60 = 09:00 -> 01:00)
 const inWindow = (m, a, b) => a === b || (a < b ? m >= a && m < b : m >= a || m < b);
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -337,19 +345,24 @@ async function sellJunk(page, main, slot, junk) {
       if (!found) { log(`ERREUR vente ${name} : introuvable dans la grille`); continue; }
       // Forgemagie : briser donne des orbes (Bouclier de forge, garde au prestige) ; on vend seulement si les kamas manquent pour l'energie
       const brk = main.locator('button', { hasText: /^Briser ×1/ }).first();
-      const breakIt = CFG.breakJunk && S.kamas >= CFG.energyKamas + 3000 && await brk.isEnabled().catch(() => false);
+      const breakIt = CFG.breakJunk && S.kamas >= CFG.energyKamas + 3000 && !(S.forge?.left <= 0) && await brk.isEnabled().catch(() => false); // quota du jour atteint -> vente
       const sell = breakIt ? brk : main.getByRole('button', { name: /^Vendre ×1/ });
       if (!(await sell.isEnabled().catch(() => false))) continue;
       const price = (await sell.innerText()).replace(/^(Vendre|Briser) ×1 : /, '');
       await sell.click(); // 1er clic : le bouton devient "Confirmer (...)"
       const confirm = main.getByRole('button', { name: /^Confirmer/ });
       if (!(await confirm.waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false))) {
-        if (breakIt) { log(`BRISE ${slot}: ${name} (score ${Math.round(s)}, ${price}, sans confirmation)`); await sleep(1200); continue; } // brise en 1 clic
+        if (breakIt) { const L = ((S.learn ??= {}).forge ??= { tries: 0, ok: 0, expected: 0, broken: 0, orbsGained: 0 }); L.broken++; L.orbsGained += +(price.match(/\+(\d+) orbe/)?.[1] ?? 0); log(`BRISE ${slot}: ${name} (score ${Math.round(s)}, ${price}, sans confirmation)`); await sleep(1200); continue; } // brise en 1 clic
         log(`ERREUR vente ${name} : pas de confirmation`); continue;
       }
       await confirm.click();
       await sleep(1200);
       if (await confirm.isVisible().catch(() => false)) { log(`ERREUR vente ${name} : confirmation sans effet`); continue; }
+      if (breakIt) { // apprentissage : orbes gagnes par objet brise ; quota du jour decompte
+        const n = +(price.match(/\+(\d+) orbe/)?.[1] ?? 0);
+        const L = ((S.learn ??= {}).forge ??= { tries: 0, ok: 0, expected: 0, broken: 0, orbsGained: 0 });
+        L.broken++; L.orbsGained += n; if (S.forge && Number.isFinite(S.forge.left)) S.forge.left -= n;
+      }
       log(`${breakIt ? 'BRISE' : 'VENDU'} ${slot}: ${name} (score ${Math.round(s)}, ${price})`);
     }
 }
@@ -844,6 +857,7 @@ if (process.argv[2] === 'test') {
     const hurt = bestMove({ ...st, hp: 600 }, 900, s, false, new Set(), PROFILES.equilibre);
     assert.ok(hurt.plan.includes('Secourisme'), JSON.stringify(hurt.plan)); // en danger : soin
   }
+  assert.deepEqual(parseForge('Bouclier de forge · niveau 1\n+1 % de stats sur tout ton équipement\nNiveau 1 / 200\nOrbes d’amélioration\n12\nEncore 1 488 orbes à gagner aujourd’hui\nNiveau 1 → 2 : 1 orbe par essai, 100 % de réussite'), { level: 1, orbs: 12, left: 1488, cost: 1, rate: 100, bonus: 1 });
   const it = { fav: false, rarity: 'COMMUN', name: 'Coiffe Bouftou', partial: false };
   assert.deepEqual([canSell(it), canSell({ ...it, rarity: 'RARE' }), canSell({ ...it, name: 'Coiffe Bouftou · Tiers 2' }), canSell({ ...it, name: 'Gelano' }), canSell({ ...it, partial: true }), canSell({ ...it, fav: true })], [true, false, false, false, false, false]);
   setEnergy(0, 200); S.energyAt -= 2.5 * REGEN; assert.equal(energyNow(), 2);
@@ -1059,24 +1073,34 @@ async function siteScan(page) {
   alert('mise a jour du site : nouveaux onglets/boutons, voir le tableau de bord');
 }
 
-// Forgemagie : ameliore le Bouclier de forge avec toutes les orbes disponibles (un echec coute les orbes, jamais un niveau)
+// Forgemagie. Page lue a chaque visite (parseForge) : niveau du bouclier, orbes, quota du jour, cout et reussite annonces de l'essai.
+// Apprentissage dans S.learn.forge : essais / reussites reels (compares a l'annonce), objets brises et orbes gagnes.
+// Strategie : un echec ne coute jamais de niveau -> on depense toutes les orbes ("10 essais" si assez, sinon essai par essai).
 async function forgeUpgrade(page) {
   await page.goto(BASE + '/forgemagie');
   await page.getByText('Bouclier de forge').first().waitFor({ timeout: 20000 });
   await sleep(1500);
-  const lvl = async () => (await page.locator('main').innerText()).match(/Bouclier de forge · niveau (\d+)/)?.[1];
-  const l0 = await lvl();
-  for (let k = 0; k < 30; k++) {
+  const read = async () => (S.forge = { ...parseForge(await page.locator('main').innerText()), at: Date.now() });
+  const L = ((S.learn ??= {}).forge ??= { tries: 0, ok: 0, expected: 0, broken: 0, orbsGained: 0 });
+  const f0 = await read();
+  for (let k = 0; k < 40; k++) {
+    const f = S.forge;
+    if (f.orbs < f.cost) break;
     const ten = page.getByRole('button', { name: /10 essais/ });
     const one = page.getByRole('button', { name: /^Améliorer/ });
-    const b = (await ten.isEnabled().catch(() => false)) ? ten : (await one.isEnabled().catch(() => false)) ? one : null;
+    const b = f.orbs >= 10 * f.cost && (await ten.isEnabled().catch(() => false)) ? ten : (await one.isEnabled().catch(() => false)) ? one : null;
     if (!b) break;
     await b.click();
-    await sleep(1500);
+    await sleep(1800);
+    const g = await read();
+    const tries = Math.max(0, Math.round((f.orbs - g.orbs) / f.cost));
+    if (!tries) break; // rien ne s'est passe
+    L.tries += tries; L.ok += Math.max(0, g.level - f.level); L.expected += (tries * f.rate) / 100;
   }
-  const l1 = await lvl();
-  if (l1 !== l0) { log(`FORGE bouclier niveau ${l0} -> ${l1}`); decide(`Forgemagie : Bouclier de forge niveau ${l0} -> ${l1}`); }
-  else decide(`Forgemagie : bouclier niveau ${l0}, pas assez d'orbes pour l'ameliorer`);
+  const f1 = S.forge;
+  const real = L.tries ? `reussite reelle ${L.ok}/${L.tries} (annoncee ~${Math.round((100 * L.expected) / L.tries)} %)` : 'pas encore d\'essai';
+  if (f1.level !== f0.level) { log(`FORGE bouclier niveau ${f0.level} -> ${f1.level} (+${f1.bonus} % stats), ${real}`); decide(`Forgemagie : bouclier niveau ${f0.level} -> ${f1.level}, +${f1.bonus} % sur tout l'equipement ; ${real}`); }
+  else decide(`Forgemagie : bouclier niveau ${f1.level} (+${f1.bonus} %), ${f1.orbs} orbe(s), essai a ${f1.cost} orbe(s) : rien a depenser`);
 }
 
 // Forgemagie (06/10) : la 1re visite donne le Bouclier de forge ; page sauvegardee pour coder son usage ensuite
@@ -1158,7 +1182,7 @@ let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
-  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
+  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
   aventure: async (p) => { huntLeft = 0; await p.goto(BASE + '/aventure'); await p.locator('button', { hasText: ADV_FIGHT }).first().click({ timeout: 20000 }); return true; },
 };
