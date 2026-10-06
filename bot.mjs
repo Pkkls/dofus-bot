@@ -164,6 +164,8 @@ const invScore = (detail) => {
 const invItems = (main) => main.locator('button:has(img)').filter({ hasNotText: /\b(?!FUSION\b)[A-Za-zÀ-ÿ]{3,}/ });
 const SLOTS = ['Chapeau', 'Cape', 'Amulette', 'Anneau', 'Ceinture', 'Bottes', 'Arme', 'Bouclier', 'Familier', 'Dofus / Trophée'];
 // Vente : pas d'anneau (2 emplacements, la comparaison ne voit qu'un anneau), ni familier, ni Dofus/Trophee
+// bouton de l'etape d'aventure : "Combattre", ou "Affronter le boss" sur une etape de boss
+const ADV_FIGHT = /^(Combattre|Affronter le boss)/;
 const SELLABLE = ['Chapeau', 'Cape', 'Amulette', 'Ceinture', 'Bottes', 'Arme', 'Bouclier'];
 const SELL_RARITY = new Set(['COMMUN', 'PEU COMMUN']); // RARE et au-dessus : jamais vendus
 // vente prudente, dans le doute on garde : favori, rarete RARE+, tiers fusionne ou Rayonnant, liste NEVER_SELL, comparaison incomplete
@@ -719,7 +721,7 @@ let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le
 const ACTIONS = {
   coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true),
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
-  aventure: async (p) => { huntLeft = 0; await p.goto(BASE + '/aventure'); await p.getByRole('button', { name: 'Combattre' }).click({ timeout: 20000 }); return true; },
+  aventure: async (p) => { huntLeft = 0; await p.goto(BASE + '/aventure'); await p.locator('button', { hasText: ADV_FIGHT }).first().click({ timeout: 20000 }); return true; },
 };
 while (true) {
   try {
@@ -836,7 +838,7 @@ while (true) {
       backToAdventure = false;
       decide(`${CFG.huntWins} victoires de rattrapage faites : je retente l'etape d'aventure`);
       await page.goto(BASE + '/aventure');
-      await page.getByRole('button', { name: 'Combattre' }).click({ timeout: 20000 });
+      await page.locator('button', { hasText: ADV_FIGHT }).first().click({ timeout: 20000 });
       log('AVENTURE - retente l\'etape');
       continue;
     }
