@@ -435,6 +435,8 @@ const CFG_META = {
   maxFightsPerHour: ['Combats max par heure', 'heure glissante, 0 = illimite', 0, 600, 1],
   energyReserve: ["Reserve d'energie", "gardee pour le boss (2 par combat), la chasse s'arrete a ce niveau", 0, 1000, 1],
   energyBuy: ["Acheter de l'energie", '1 = a la reserve, achete +10 (300 K le point) sans toucher a la reserve de kamas', 0, 1, 1],
+  trainFights: ['Combats d\'entrainement', 'par seance, lancee avec le bouton Entrainement', 1, 50, 1],
+  trainLevel: ['Niveau d\'entrainement', 'zone visee (niveau max), perdus d\'avance', 1, 300, 5],
   manualFight: ['Combat manuel', '1 = le moteur du bot joue les cartes, 0 = mode Auto du jeu', 0, 1, 1],
   energyResume: ['Energie de reprise', 'apres la reserve, la chasse reprend a ce niveau (1 point / 6 min)', 1, 1000, 1],
 };
@@ -448,6 +450,7 @@ const ACTS = {
   arene: ['Arene', 'swords', 'defier le plus faible'],
   boss: ['Boss', 'crown', 'tenter maintenant'],
   energie: ['Energie max', 'zap', 'acheter le plein, 300 K le point'],
+  entrainement: ['Entrainement', 'brain', 'combats perdus d\'avance pour apprendre'],
   zone: ['Zone facile', 'map', 'changer de zone'],
   aventure: ['Aventure', 'flag', 'retenter l\'etape'],
   f5: ['Recharger', 'refresh', 'F5 sur la page'],

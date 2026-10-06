@@ -17,7 +17,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1] }; // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300] }; // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -65,7 +65,7 @@ const KEEP = ['stats', 'learn', 'arena', 'boss', 'deck', 'elem', 'energy', 'ener
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
-const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'zone', 'aventure', 'f5'];
+const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'entrainement', 'zone', 'aventure', 'f5'];
 // horaires en minutes depuis minuit ; une plage peut passer minuit (ex. 540 -> 60 = 09:00 -> 01:00)
 const inWindow = (m, a, b) => a === b || (a < b ? m >= a && m < b : m >= a || m < b);
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -418,7 +418,17 @@ const PROFILES = {
 const pickProfile = () => {
   const L = (S.learn ??= {}).prof ??= {};
   const n = Object.values(L).reduce((a, p) => a + p.n, 0);
-  return Object.keys(PROFILES).map((k) => [k, L[k]?.n ? L[k].r / L[k].n + Math.sqrt((2 * Math.log(n + 1)) / L[k].n) : Infinity]).sort((a, b) => b[1] - a[1])[0][0];
+  const T = S.learn.train ?? {};
+  const surv = (k) => (T[k]?.n ? T[k].r / T[k].n : 0.5); // survie moyenne en entrainement, 0.5 si inconnue
+  return Object.keys(PROFILES).map((k) => [k, L[k]?.n ? L[k].r / L[k].n + Math.sqrt((2 * Math.log(n + 1)) / L[k].n) + 0.3 * surv(k) : Infinity]).sort((a, b) => b[1] - a[1])[0][0];
+};
+// entrainement (combats perdus d'avance) : recompense = tours tenus (sur 10) et part des PV ennemis infligee
+const rewardTrain = (k, turns, dmgFrac) => { const p = ((S.learn ??= {}).train ??= {})[k] ??= { n: 0, r: 0, turns: 0 }; p.n++; p.turns += turns; p.r += 0.5 * Math.min(turns, 10) / 10 + 0.5 * dmgFrac; };
+// pour choisir le style pendant l'entrainement : on explore, UCB sur la table d'entrainement seule
+const pickTrainProfile = () => {
+  const T = (S.learn ??= {}).train ??= {};
+  const n = Object.values(T).reduce((a, p) => a + p.n, 0);
+  return Object.keys(PROFILES).map((k) => [k, T[k]?.n ? T[k].r / T[k].n + Math.sqrt((2 * Math.log(n + 1)) / T[k].n) : Infinity]).sort((a, b) => b[1] - a[1])[0][0];
 };
 const rewardProfile = (k, win, turns) => { const p = ((S.learn ??= {}).prof ??= {})[k] ??= { n: 0, r: 0, w: 0 }; p.n++; p.w += win ? 1 : 0; p.r += win ? 1 - Math.min(turns, 20) / 40 : 0; };
 // valeur d'un plan (cartes jouees ce tour) avec un focus pour les cartes mono-cible
@@ -465,7 +475,8 @@ async function playTurn(page) {
   let st = await readFight(page);
   if (!st.myTurn || !st.hand.length) return false;
   const s = S.stats ?? NO_STATS;
-  if (st.turn <= 1 || !fightMem.profile) fightMem = { turn: st.turn, endHp: null, inc: 0, profile: pickProfile() };
+  if (st.turn <= 1 || !fightMem.profile) fightMem = { turn: st.turn, endHp: null, inc: 0, profile: trainLeft > 0 ? pickTrainProfile() : pickProfile(), ehp0: st.enemies.reduce((a, e) => a + e.max, 0) };
+  fightMem.ehp = st.enemies.reduce((a, e) => a + e.hp + e.prot, 0);
   fightMem.turn = st.turn;
   const P = PROFILES[fightMem.profile];
   if (fightMem.incTurn !== st.turn) { // une seule estimation par tour, meme si le tour est joue en plusieurs appels
@@ -536,6 +547,18 @@ const pickGroup = (txt, maxRank) => {
   return i >= 0 ? i : r.indexOf(Math.min(...r));
 };
 
+// zone d'entrainement : dans "Toutes les zones", celle dont le niveau max est le plus proche de CFG.trainLevel
+async function pickHardZone(page) {
+  await page.goto(BASE + '/chasse');
+  await page.getByRole('link', { name: /Toutes les zones/ }).click({ timeout: 20000 });
+  await sleep(2500);
+  const z = (await page.locator('a[href^="/chasse?zone="]').evaluateAll((els) => els.map((e) => [e.getAttribute('href'), e.innerText])))
+    .map(([h, t]) => [h, +(t.match(/Niveau \d+[–-](\d+)/)?.[1] ?? 0), t.split('\n')[0]]).filter(([, m]) => m);
+  const pick = z.sort((a, b) => Math.abs(a[1] - CFG.trainLevel) - Math.abs(b[1] - CFG.trainLevel))[0];
+  if (pick) decide(`Entrainement : zone ${pick[2]} (niveau max ${pick[1]}, cible ${CFG.trainLevel}), parmi ${z.length} zones`);
+  return pick?.[0];
+}
+
 async function attackGroup(page, zone, maxRank) {
   await page.goto(BASE + zone);
   await page.getByRole('button', { name: 'Attaquer' }).first().waitFor({ timeout: 20000 });
@@ -547,6 +570,7 @@ async function attackGroup(page, zone, maxRank) {
   decide(`Groupe ${i + 1} attaque : le plus gros dont la difficulte <= ${RANK[maxRank]}`);
   await page.getByRole('button', { name: 'Attaquer' }).nth(i).click();
   log(`ATTAQUE ${zone} groupe ${i + 1}`);
+  return true;
 }
 
 // zones de ma tranche : easiest = niveau max le plus bas ; sinon meilleure XP = niveau max le plus haut <= mon niveau
@@ -893,11 +917,12 @@ await managePass(page);
 let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastText = '', combats = 0;
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
+let trainLeft = 0, trainZone = null; // entrainement demande depuis le tableau de bord
 let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
-  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true),
+  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
   aventure: async (p) => { huntLeft = 0; await p.goto(BASE + '/aventure'); await p.locator('button', { hasText: ADV_FIGHT }).first().click({ timeout: 20000 }); return true; },
 };
@@ -953,6 +978,15 @@ while (true) {
       if (win && huntLeft > 0 && --huntLeft === 0) backToAdventure = true;
     }
     if (winsSinceStrike >= 30) strikes = 0;
+    if (fight === 'entrainement' && fightMem.profile) {
+      const dmgFrac = fightMem.ehp0 ? Math.max(0, Math.min(1, 1 - fightMem.ehp / fightMem.ehp0)) : 0;
+      rewardTrain(fightMem.profile, fightMem.turn, dmgFrac);
+      const t = S.learn.train[fightMem.profile];
+      trainLeft = Math.max(0, trainLeft - 1);
+      decide(`Entrainement (${fightMem.profile}) : ${win ? 'victoire' : 'defaite'}, tenu ${fightMem.turn} tours, ${Math.round(dmgFrac * 100)} % des PV ennemis ; moyenne du style ${(t.turns / t.n).toFixed(1)} tours sur ${t.n} essais ; reste ${trainLeft}`);
+      log(`ENTRAINEMENT ${fightMem.profile} ${fightMem.turn} tours ${Math.round(dmgFrac * 100)} %`);
+      fightMem = { turn: 0, endHp: null, inc: 0, profile: null };
+    }
     if (fightMem.profile) { rewardProfile(fightMem.profile, win, fightMem.turn); const p = S.learn.prof[fightMem.profile]; decide(`Style ${fightMem.profile} : ${win ? 'victoire' : 'defaite'} en ${fightMem.turn} tours (${p.w}/${p.n} gagnes)`); fightMem = { turn: 0, endHp: null, inc: 0, profile: null }; }
     if (fight === 'boss') S.boss = { ...S.boss, live: false, last: win ? 'victoire' : 'defaite' };
     if (fight === 'arene') S.arena = { ...S.arena, last: win ? 'victoire' : 'defaite' };
@@ -1011,6 +1045,11 @@ while (true) {
       if (strikes >= 2 || !zone) zone = (await pickZone(page, zone, true)) ?? zone;
       await attackGroup(page, zone, 0);
       continue;
+    }
+    if (trainLeft > 0 && CFG.manualFight) {
+      trainZone ??= await pickHardZone(page);
+      if (trainZone && (await safe('entrainement', attackGroup(page, trainZone, 3))) === true) { fight = 'entrainement'; continue; }
+      if (!trainZone) { decide('Entrainement annule : aucune zone trouvee'); trainLeft = 0; }
     }
     if (deckDue) { decide(`Passe de gestion : coffres, deck, stuff, HDV, caracs (tous les ${CFG.passEvery} combats ou apres une defaite)`); deckDue = false; await managePass(page); continue; }
     if (backToAdventure) {
