@@ -439,7 +439,7 @@ async function allocateStats(page) {
   // Un point de Sagesse vaut 1/(100+Sag)/coutSag, un point de stat 1/(100+stat+Pui)/coutStat : on vise l'egalite, frein selon le danger (wis)
   const wisCost = +(body.match(/\nSagesse\n[^\n]+\n(\d+) pt/)?.[1] ?? 3);
   const mainCost = +(body.match(new RegExp(`\\n${main}\\n[^\\n]+\\n(\\d+) pt`))?.[1] ?? 3);
-  const sag = +(body.match(/\nSagesse\n(\d+)/)?.[1] ?? 0), mainVal = +(body.match(new RegExp(`\\n${main}\\n(\\d+)`))?.[1] ?? 0), pui = S.stats?.Puissance ?? 0;
+  const sag = +(body.match(/\nSagesse\n(\d+)/)?.[1] ?? 0), mainVal = +(body.match(new RegExp(`\\n${main}\\n(\\d+)`))?.[1] ?? 0), pui = +(body.match(/(\d+)\nPUISSANCE/)?.[1] ?? S.stats?.Puissance ?? 0); // lue sur la fiche (le cache S.stats peut etre vide)
   const L = (S.learn ??= {});
   const gate = CFG.wisShare > 0 ? wis / CFG.wisShare : 0; // 0 danger, 0.5 tendu, 1 normal, 1.5 confortable
   const sagTarget = (100 + mainVal + pui) * (mainCost / wisCost) - 100; // egalite des rendements marginaux
