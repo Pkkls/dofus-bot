@@ -1279,6 +1279,8 @@ async function managePass(page) {
 const ctx = await chromium.launchPersistentContext('profile', { headless: false, viewport: null });
 const page = ctx.pages()[0] ?? await ctx.newPage();
 startDashboard(page);
+// fenetres d'annonce ("Rejoins le Discord !", redemarrage du serveur...) : fermees par "Plus tard" avant toute action, ou que soit le bot (gestion comprise)
+await page.addLocatorHandler(page.getByRole('button', { name: 'Plus tard', exact: true }), async (b) => { await b.click().catch(() => {}); log('ANNONCE fermee (Plus tard)'); }, { noWaitAfter: true });
 await page.route(/\/img\//, (route) => (blockable(route.request().url()) ? route.abort() : route.continue()));
 page.on('request', (r) => { if (!r.url().startsWith(BASE)) return; if (blockable(r.url())) { NET.blocked++; return; } /* bloquee : jamais envoyee */ const k = netKind(r); NET.total++; NET.by[k]++; NET.recent.push([Date.now(), k]); });
 page.on('response', (r) => { if (r.status() === 429 && r.url().startsWith(BASE)) NET.r429++; });
