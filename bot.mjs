@@ -18,7 +18,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMin: [2, 0, 9], breakMax: [8, 0, 9], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], hardEvery: [10, 0, 200], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMin: [2, 0, 9], breakMax: [8, 0, 9], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], hardEvery: [10, 0, 200], stuckSec: [15, 5, 120], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -1223,7 +1223,7 @@ async function unblock(page, text) {
   const labels = await page.locator('button:visible, a:visible').evaluateAll((els) => els.map((e) => e.innerText.replace(/\s+/g, ' ').trim()).filter((t) => t && t.length < 40)).catch(() => []);
   const clickables = [...new Set(labels)].filter((t) => UNBLOCK_OK.test(t) && !UNBLOCK_NO.test(t));
   const score = (a) => { const u = known[a]; return u ? (u.ok + 1) / (u.ok + u.ko + 2) : 0.5; };
-  const acts = [...clickables, 'F5', 'combat', 'attaque'].filter((a) => !unblockTried.has(a)).sort((a, b) => score(b) - score(a));
+  const acts = ['F5', ...clickables, 'combat', 'attaque'] // F5 d'abord (serveur souvent surcharge), le tri par score appris garde la main.filter((a) => !unblockTried.has(a)).sort((a, b) => score(b) - score(a));
   const act = acts[0] ?? (unblockTried.clear(), 'F5');
   log(`BLOQUE - essai "${act}" sur "${sig}"`);
   decide(`Page figee 30 s sur "${sig}" : j'essaie "${act}"${known[act] ? ` (deja marche ${known[act].ok}/${known[act].ok + known[act].ko})` : ''}`);
@@ -1565,7 +1565,11 @@ while (true) {
   }
 
   // serveur en vrac ou rien ne bouge depuis 30 s : F5
-  if (/Application error|Internal Server Error|Bad Gateway|Something went wrong|This page couldn.t load/i.test(text) || Date.now() - idleSince > 30000) {
+  // serveur surcharge : page d'erreur -> F5 tout de suite ; page figee stuckSec secondes -> deblocage appris (F5 en tete)
+  if (/Application error|Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out|Something went wrong|This page couldn.t load|ERR_[A-Z_]+|(Error|HTTP|Erreur) 50[234]/i.test(text.slice(0, 400))) {
+    log('ERREUR serveur - F5'); await page.reload().catch(() => {}); await sleep(2000);
+    autoClicked = false; idleSince = Date.now();
+  } else if (Date.now() - idleSince > CFG.stuckSec * 1000) {
     await unblock(page, text);
     autoClicked = false; idleSince = Date.now();
   }
