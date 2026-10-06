@@ -1198,6 +1198,32 @@ let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, l
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
 let clickFails = []; // clics expires recents (fenetre inconnue)
 // XP hard (bouton) : plus gros groupes, palier suivant a chaque victoire, 1re defaite -> un cran plus bas puis montee normale
+// Deblocage appris (S.learn.unblock[signature][action] = { ok, ko }) : page figee 30 s -> une action sure a la fois, la meilleure connue d'abord.
+// Jamais : achats/ventes/brisage, fuite, deconnexion, guilde, reinitialisation, Discord, test de presence (traite avant).
+const UNBLOCK_OK = /^(Retour|Continuer|Plus tard|Fermer|OK|Compris|J.ai compris|Suivant|Étape suivante|Chasse libre|Autres groupes|Refaire ce combat|Réessayer|Passer|Valider|Reprendre|Fin du tour)/i;
+const UNBLOCK_NO = /Acheter|Vendre|Briser|Fuir|Déconnexion|Dissoudre|Réinitialiser|Supprimer|Abandonner|Payer|Discord|Défier|Améliorer|Fusionner|Équiper|Ouvrir/i;
+let unblockPending = null, unblockTried = new Set();
+async function unblock(page, text) {
+  const sig = `${new URL(page.url()).pathname} | ${(text.split('\n').map((l) => l.trim()).find((l) => l.length > 3 && !/DofusMasters|Annonce|Événement/.test(l)) ?? '').replace(/\d+/g, '#').slice(0, 50)}`;
+  if (unblockPending) { // l'action precedente n'a rien change
+    const U = (((S.learn ??= {}).unblock ??= {})[unblockPending.sig] ??= {})[unblockPending.act] ??= { ok: 0, ko: 0 };
+    U.ko++; unblockTried.add(unblockPending.act); unblockPending = null;
+  }
+  const known = S.learn?.unblock?.[sig] ?? {};
+  const labels = await page.locator('button:visible, a:visible').evaluateAll((els) => els.map((e) => e.innerText.replace(/\s+/g, ' ').trim()).filter((t) => t && t.length < 40)).catch(() => []);
+  const clickables = [...new Set(labels)].filter((t) => UNBLOCK_OK.test(t) && !UNBLOCK_NO.test(t));
+  const score = (a) => { const u = known[a]; return u ? (u.ok + 1) / (u.ok + u.ko + 2) : 0.5; };
+  const acts = [...clickables, 'F5', 'combat', 'attaque'].filter((a) => !unblockTried.has(a)).sort((a, b) => score(b) - score(a));
+  const act = acts[0] ?? (unblockTried.clear(), 'F5');
+  log(`BLOQUE - essai "${act}" sur "${sig}"`);
+  decide(`Page figee 30 s sur "${sig}" : j'essaie "${act}"${known[act] ? ` (deja marche ${known[act].ok}/${known[act].ok + known[act].ko})` : ''}`);
+  unblockPending = { sig, act, at: Date.now() };
+  if (act === 'F5') await page.reload().catch(() => {});
+  else if (act === 'combat') await page.goto(COMBAT).catch(() => {});
+  else if (act === 'attaque') { zone ??= await pickZone(page, null, true).catch(() => null); if (zone) await safe('attaque', attackGroup(page, zone, grpRank())); }
+  else await page.locator('button:visible, a:visible').filter({ hasText: act }).first().click({ timeout: 5000 }).catch(() => {});
+  unblockPending.at = Date.now();
+}
 let xpHard = false, xpHardWins = 0, zoneCheck = 0;
 const grpRank = () => (xpHard ? 3 : strikes ? 0 : CFG.maxGroup);
 let paced = false, throwChecked = false; // rythme : ecart deja fait sur cet ecran de fin ; abandon deja tire pour ce combat
@@ -1224,7 +1250,15 @@ while (true) {
   if (S.queue[0] === 'f5') { S.queue.shift(); log('ACTION f5 (tableau de bord)'); await page.goto(COMBAT); idleSince = Date.now(); continue; }
   if (S.paused) { S.status = 'pause'; await sleep(1000); idleSince = Date.now(); continue; }
   const text = await page.locator('body').innerText().catch(() => '');
-  if (text !== lastText) { lastText = text; idleSince = Date.now(); } // la page bouge = pas bloque
+  if (text !== lastText) { // la page bouge = pas bloque ; si une action de deblocage vient d'etre tentee, elle a marche
+    lastText = text; idleSince = Date.now();
+    if (unblockPending && Date.now() - unblockPending.at < 30000) {
+      const U = (((S.learn ??= {}).unblock ??= {})[unblockPending.sig] ??= {})[unblockPending.act] ??= { ok: 0, ko: 0 };
+      U.ok++; log(`DEBLOCAGE appris : "${unblockPending.sig}" -> ${unblockPending.act} (${U.ok}/${U.ok + U.ko})`);
+      decide(`Deblocage : sur "${unblockPending.sig}", l'action "${unblockPending.act}" a marche, je la retiens`);
+      unblockPending = null;
+    }
+  }
   readHeader(text);
   // prestige (retour niveau 1, sorts et inventaire perdus) : on oublie zone, compteurs et anneaux, passe de gestion, aventure depuis le debut
   if (lastLevel && S.level && S.level < lastLevel - 5) {
@@ -1272,7 +1306,7 @@ while (true) {
   if (/Victoire !|Défaite/.test(text) && !/À toi de jouer/.test(text) && (fight || await endBtn.first().isVisible().catch(() => false))) { // boss/arene : ecran de fin peut-etre sans bouton connu
     if (!endHandled) {
     endHandled = true;
-    paced = false; throwChecked = false;
+    paced = false; throwChecked = false; unblockTried.clear();
     if (++combats % CFG.passEvery === 0) deckDue = true;
     const win = /Victoire !/.test(text) && !/Défaite/.test(text);
     const num = (s) => s.replace(/\D/g, '');
@@ -1505,13 +1539,7 @@ while (true) {
 
   // serveur en vrac ou rien ne bouge depuis 30 s : F5
   if (/Application error|Internal Server Error|Bad Gateway|Something went wrong|This page couldn.t load/i.test(text) || Date.now() - idleSince > 30000) {
-    log('BLOQUE - rechargement');
-    decide(stuck % 2 ? 'Page figee depuis 30 s : je relance un combat via la zone' : 'Page figee depuis 30 s : F5');
-    if (++stuck % 2 === 0) { // 2e blocage : relance un combat via la zone (zone la plus facile si inconnue)
-      zone ??= await pickZone(page, null, true).catch(() => null);
-      if (zone) await safe('attaque', attackGroup(page, zone, grpRank()));
-    }
-    else await page.goto(COMBAT).catch(() => {});
+    await unblock(page, text);
     autoClicked = false; idleSince = Date.now();
   }
   await sleep(1000);

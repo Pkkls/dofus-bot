@@ -707,7 +707,7 @@ function render(d) {
 }
 
 /* ---------- historique : onglets + filtres ---------- */
-const FILTERS = { tout: null, combats: /VICTOIRE|DEFAITE/, gestion: /EQUIPE|VENDU|BRISE|FORGE|COFFRE|DECK|CARAC|FUSION|HDV|CONFIG/, alertes: /ERREUR|BLOQUE|PRESENCE|429|EXPIREE|TROP|ENERGIE|INDICE/ };
+const FILTERS = { tout: null, combats: /VICTOIRE|DEFAITE/, gestion: /EQUIPE|VENDU|BRISE|FORGE|COFFRE|DECK|CARAC|FUSION|HDV|CONFIG/, alertes: /ERREUR|BLOQUE|DEBLOCAGE|PRESENCE|429|EXPIREE|TROP|ENERGIE|INDICE/ };
 $('filters').innerHTML = Object.keys(FILTERS).map((k) => `<button type="button" data-f="${k}" aria-pressed="${k === filter}">${k}</button>`).join('');
 $('filters').onclick = (e) => {
   const f = e.target.closest('button')?.dataset.f;
