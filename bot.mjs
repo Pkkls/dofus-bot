@@ -794,10 +794,11 @@ let ZONES = null;
 async function allZones(page) {
   if (ZONES?.length) return ZONES;
   await page.goto(BASE + '/chasse');
-  await page.getByRole('link', { name: /Toutes les zones/ }).click({ timeout: 20000 });
-  await sleep(2500);
+  await page.locator('a[href^="/chasse?zone="]').first().waitFor({ timeout: 20000 });
+  if ((await page.locator('a[href^="/chasse?zone="]').count()) < 20) { await page.getByRole('link', { name: /Toutes les zones/ }).click({ timeout: 5000 }).catch(() => {}); await sleep(2500); } // ancienne interface : page a part
+  const seen = new Set();
   ZONES = (await page.locator('a[href^="/chasse?zone="]').evaluateAll((els) => els.map((e) => [e.getAttribute('href'), e.innerText])))
-    .map(([h, t]) => [h, +(t.match(/Niveau \d+[–-](\d+)/)?.[1] ?? 0), t.split('\n')[0], +(t.match(/Niveau (\d+)[–-]/)?.[1] ?? 0)]).filter(([, m]) => m).sort((a, b) => a[1] - b[1]); // [href, niv max, nom, niv min]
+    .filter(([h]) => !seen.has(h) && seen.add(h)).map(([h, t]) => { const r = zoneRange(t); return [h, r?.[1] ?? 0, t.split('\n')[0], r?.[0] ?? 0]; }).filter(([, m]) => m).sort((a, b) => a[1] - b[1]); // [href, niv max, nom, niv min]
   return ZONES;
 }
 // palier de zone suivant (dir 1) ou precedent (dir -1) par niveau max ; reste sur place en bout de liste
@@ -829,8 +830,17 @@ async function pickHardZone(page) {
 
 async function attackGroup(page, zone, maxRank) {
   await page.goto(BASE + zone);
-  await page.getByRole('button', { name: 'Attaquer' }).first().waitFor({ timeout: 20000 });
+  await page.getByText(/Groupe 1|réservée aux joueurs/).first().waitFor({ timeout: 20000 });
   const t = await page.locator('main').innerText();
+  const resv = t.match(/réservée aux joueurs de niveau (\d+)/);
+  if (resv && (S.level ?? 0) < +resv[1]) { // trop haut pour moi (prestige, redemarrage) : zone de mon niveau
+    log(`ZONE ${zone} reservee au niveau ${resv[1]} (moi ${S.level}) : je change de zone`); decide(`Zone reservee au niveau ${resv[1]}, je suis niveau ${S.level} : zone de mon niveau`);
+    xpHard = false; S.xpHard = false;
+    const nz = await pickZone(page, zone, false);
+    if (!nz || nz === zone) return;
+    zone = nz; S.zone = nz;
+    return attackGroup(page, nz, maxRank);
+  }
   const en = t.match(/Énergie : (\d+)\/(\d+)/);
   if (en) setEnergy(+en[1], +en[2]);
   if (en && +en[1] <= CFG.energyReserve) { S.recharging = true; decide(`Energie ${en[1]} <= reserve ${CFG.energyReserve} : pas d'attaque, retour a l'ecran de fin pour recharger`); await page.goto(COMBAT); return; }
@@ -845,10 +855,10 @@ async function attackGroup(page, zone, maxRank) {
 // zones de ma tranche : easiest = niveau max le plus bas ; sinon meilleure XP = niveau max le plus haut <= mon niveau
 async function pickZone(page, current, easiest) {
   await page.goto(BASE + '/chasse');
-  await page.getByText('Zones de mon niveau').first().waitFor({ timeout: 20000 });
-  const lvl = +((await page.locator('body').innerText()).match(/Niv\. (\d+)/)?.[1] ?? 1);
+  await page.locator('a[href^="/chasse?zone="]').first().waitFor({ timeout: 20000 });
+  const lvl = S.level || +((await page.locator('body').innerText()).match(/Niv\. (\d+)/)?.[1] ?? 1);
   const z = (await page.locator('a[href^="/chasse?zone="]').evaluateAll((els) => els.map((e) => [e.getAttribute('href'), e.innerText])))
-    .map(([h, t]) => [h, +(t.match(/Niveau \d+–(\d+)/)?.[1] ?? 999)]).filter(([h]) => h !== current).sort((a, b) => a[1] - b[1]);
+    .map(([h, t]) => [h, zoneRange(t)?.[1] ?? 999, zoneRange(t)?.[0] ?? 0]).filter(([h, , mn]) => h !== current && mn <= lvl).sort((a, b) => a[1] - b[1]); // [href, niv max, niv min], zones accessibles
   const pick = (easiest ? z[0] : z.filter(([, m]) => m <= lvl).pop() ?? z[0]);
   if (pick) decide(`Zone ${pick[0].split('=')[1]} : ${easiest ? 'la plus facile de ma tranche' : 'meilleure XP sans depasser mon niveau'} (niv max ${pick[1]}, moi ${lvl})`);
   return pick?.[0];
@@ -911,6 +921,8 @@ async function fightArena(page) {
 
 // HDV : achete de quoi remplir les emplacements vides (vus par la passe inventaire), dans le budget au-dessus de la reserve
 // ponytail: emplacements vides seulement, l'HDV ne montre pas de comparaison avec la piece portee
+// niveaux d'une zone : "Niv. 1–5 · 4 monstres" (07/10) ou "Niveau 1–5" (avant) -> [min, max]
+const zoneRange = (t) => { const m = t.match(/Niv(?:eau|\.) (\d+)\s*[–-]\s*(\d+)/); return m ? [+m[1], +m[2]] : null; };
 // en-tete : "Nom ✦1\nNiv. 152 · 11 403 K" (avant le 07/10) ou "Nom ✦1\nNiv. 200\n25 215\nkamas" (apres)
 const parseHeader = (t) => {
   const m = t.match(/([^\n]+)\nNiv\. (\d+)(?: · ([\d\s\u00a0\u202f]+) K|\n([\d\s\u00a0\u202f]+)\nkamas)/);
@@ -1032,6 +1044,7 @@ if (process.argv[2] === 'test') {
   assert.deepEqual(HR.map((r) => [r.name, r.level, r.price, r.buyable]), [['Yugoufle', 41, 300, true], ['Kompost', 60, 1500, false]]);
   assert.deepEqual(parseHeader('RpgMasters\nBernardarnault ✦1\nNiv. 200\n25 215\nkamas\nTableau de bord'), { name: 'Bernardarnault ✦1', level: 200, kamas: 25215, prestige: 1 });
   assert.deepEqual(parseHeader('DofusMasters\nPerso\nNiv. 152 · 11 403 K\nDéconnexion'), { name: 'Perso', level: 152, kamas: 11403, prestige: 0 });
+  assert.deepEqual(zoneRange('Route des âmes\nIncarnam\nNiv. 1–5 · 4 monstres'), [1, 5]); assert.deepEqual(zoneRange('Champs\nNiveau 12-20'), [12, 20]);
   const ASC = 'Pour refaire un Prestige : étage 20 terminé pour passer Prestige 4 ; étage 30, 1600 d’Elo et 500 000 dégâts cumulés au Kralamoure pour le Prestige 5 ; étage 40, 2000 d’Elo pour le Prestige 6.';
   assert.equal(prestigeFloor(ASC, 4), '20'); assert.equal(prestigeFloor(ASC, 5), '30'); assert.equal(prestigeFloor(ASC, 2), null);
   assert.deepEqual(parseHdvRows('\n400 offres\nSoubretture\nNiv. 10 · Ceinture\npar Kkkkkk\n750 K\nAcheter').map((r) => [r.name, r.level, r.price, r.buyable]), [['Soubretture', 10, 750, true]]);
