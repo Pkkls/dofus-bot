@@ -435,11 +435,19 @@ async function allocateStats(page) {
     const tip = (await el.evaluate((e) => e.closest('[title]')?.title || '').catch(() => '')) || ((await page.locator('body').innerText()).split('\n').find((l) => /exp.rience|XP/i.test(l) && /sagesse/i.test(l)) ?? '');
     if (tip) { (S.learn ??= {}).wisTip = tip; log(`SAGESSE effet : ${tip.slice(0, 200)}`); }
   }
+  // Compromis XP / degats a la marge : XP/min ~ (1 + Sag/100) x (1 + (stat + Puissance)/100).
+  // Un point de Sagesse vaut 1/(100+Sag)/coutSag, un point de stat 1/(100+stat+Pui)/coutStat : on vise l'egalite, frein selon le danger (wis)
   const wisCost = +(body.match(/\nSagesse\n[^\n]+\n(\d+) pt/)?.[1] ?? 3);
+  const mainCost = +(body.match(new RegExp(`\\n${main}\\n[^\\n]+\\n(\\d+) pt`))?.[1] ?? 3);
+  const sag = +(body.match(/\nSagesse\n(\d+)/)?.[1] ?? 0), mainVal = +(body.match(new RegExp(`\\n${main}\\n(\\d+)`))?.[1] ?? 0), pui = S.stats?.Puissance ?? 0;
   const L = (S.learn ??= {});
-  L.wisDebt = (L.wisDebt ?? 0) + total * wis; // fractions reportees : 5 pts/niveau ne font pas toujours 1 sagesse
-  const wantWis = Math.floor(L.wisDebt / wisCost);
-  decide(`Caracs : ${total} points, ${Math.round(vit * 100)} % en Vitalite (${vitWhy()}), ${Math.round(wis * 100)} % en Sagesse (XP, ${wisCost} pt/point), le reste en ${main}`);
+  const gate = CFG.wisShare > 0 ? wis / CFG.wisShare : 0; // 0 danger, 0.5 tendu, 1 normal, 1.5 confortable
+  const sagTarget = (100 + mainVal + pui) * (mainCost / wisCost) - 100; // egalite des rendements marginaux
+  const spendable = Math.floor((total - Math.floor(total * vit)) / wisCost);
+  const wantWis = (S.level ?? 0) >= 200 || gate === 0 ? 0 : Math.min(spendable, Math.max(0, Math.round((sagTarget - sag) * Math.min(1, gate))));
+  const mWis = 1 / (100 + sag) / wisCost, mMain = 1 / (100 + mainVal + pui) / mainCost;
+  decide(`Caracs : ${total} points. Vitalite ${Math.round(vit * 100)} % (${vitWhy()}). Sagesse ${sag} -> cible ${Math.round(sagTarget)} : 1 pt de Sagesse = ${(mWis / mMain).toFixed(1)}x l'XP/min d'1 pt de ${main} (${mainVal} + ${pui} Puissance)${gate < 1 ? `, freine (danger)` : ''}. +${wantWis} Sagesse, le reste en ${main}`);
+  (L.wisLog ??= []).unshift({ t: Date.now(), lvl: S.level, sag, add: wantWis, xpf: Math.round(L.xpf ?? 0), loss: S.learn?.build?.loss ?? null }); L.wisLog.length = Math.min(L.wisLog.length, 20); // validation
   for (const [stat, want] of [['Vitalité', Math.floor(total * vit)], ['Sagesse', wantWis], [main, Infinity]]) { // Vitalite d'abord : 1 pt fixe, la stat principale a des paliers
     if (!(await pts())) break; // les paliers de cout peuvent tout consommer sur la stat principale
     const input = page.getByLabel(`Points à ajouter en ${stat}`);
@@ -450,7 +458,6 @@ async function allocateStats(page) {
     await input.locator('xpath=following::button[normalize-space()="Ajouter"][1]').click();
     await sleep(1500);
     log(`CARAC +${n} ${stat}`);
-    if (stat === 'Sagesse') L.wisDebt = Math.max(0, L.wisDebt - n * wisCost);
   }
 }
 
@@ -1419,6 +1426,7 @@ while (true) {
     const win = /Victoire !/.test(text) && !/Défaite/.test(text);
     const num = (s) => s.replace(/\D/g, '');
     const g = text.match(/\+([\d\s]+?) XP\s*\+([\d\s]+?) kamas/);
+    if (!fight && win && g) { const L = (S.learn ??= {}); const x = +g[1].replace(/\D/g, ''); L.xpf = L.xpf ? 0.9 * L.xpf + 0.1 * x : x; } // XP moyenne par victoire de chasse (validation sagesse)
     if (!fight && S.attackZone && S.attackAt && Date.now() - S.attackAt < 900000) { // stats de zone (chasse) : moyennes glissantes
       const Z = (((S.learn ??= {}).zones ??= {})[S.attackZone] ??= { n: 0, win: 0.9, xpm: 0, lvl: S.level });
       const xpm = (win && g ? +g[1].replace(/\D/g, '') : 0) / ((Date.now() - S.attackAt) / 60000);

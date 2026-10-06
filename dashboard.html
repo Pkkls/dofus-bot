@@ -358,6 +358,7 @@ details[open].card > summary .chev { transform: rotate(180deg); }
           <dt>Forge</dt><dd id="m-forge">-</dd>
           <dt>XP hard</dt><dd id="m-hard">-</dd>
           <dt>Build</dt><dd id="m-build">-</dd>
+          <dt>Sagesse (XP)</dt><dd id="m-wis">-</dd>
           <dt>Meilleures zones (XP/min)</dt><dd id="m-zones">-</dd>
         </dl>
           <div class="sub">Correctif de degats appris (reel / prevu)</div>
@@ -729,6 +730,8 @@ function render(d) {
   $('m-unblock').innerHTML = unb.slice(0, 6).map(([k, [a, r]]) => `<div class="cardx"><span class="cost">${r.ok}</span><span class="n">${esc(k)} <span class="muted">· ${esc(a)}</span></span><span class="m num">${r.ok}/${r.ok + r.ko}</span></div>`).join('') || '<div class="empty" style="padding:0">Aucun blocage rencontre.</div>';
   const av = Object.entries(L.arenaAvoid ?? {});
   $('m-avoid').innerHTML = av.length ? av.map(([k, v]) => `<div><b>${esc(k)}</b> : evite depuis le niv ${v.lvl}, retente au niv ${v.lvl + 3} ou avec un autre deck</div>`).join('') : 'aucun';
+  const W = L.wisLog ?? [];
+  $('m-wis').textContent = W.length ? W.slice(0, 4).map((w) => `niv ${w.lvl} : ${w.sag}${w.add ? ' (+' + w.add + ')' : ''}, ${short(w.xpf)} XP/victoire, defaites ${w.loss == null ? '?' : pct(w.loss)}`).join(' | ') : 'releve a la prochaine repartition';
   const B = L.build;
   $('m-build').textContent = B?.n ? `PV mini moyens ${pct(B.minHp)}, defaites ${pct(B.loss)} sur ${B.n} combats${L.wisTip ? ' ; sagesse : ' + L.wisTip.slice(0, 60) : ''}` : 'en cours d\'apprentissage';
   const zs = Object.entries(L.zones ?? {}).filter(([, z]) => z.n >= 3).sort((a, z) => z[1].xpm - a[1].xpm).slice(0, 3);
