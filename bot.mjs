@@ -101,7 +101,7 @@ const KEEP = ['hdvBought', 'rushAsc', 'ascBest', 'seenAnnouncements', 'maintenan
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
-const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'abysses', 'spots', 'site', 'xphard', 'entrainement', 'zone', 'aventure', 'f5'];
+const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'abysses', 'spots', 'site', 'xphard', 'entrainement', 'zone', 'aventure', 'f5', 'prestige', 'hdvvente'];
 // horaires en minutes depuis minuit ; une plage peut passer minuit (ex. 540 -> 60 = 09:00 -> 01:00)
 const inWindow = (m, a, b) => a === b || (a < b ? m >= a && m < b : m >= a || m < b);
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
