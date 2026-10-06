@@ -525,7 +525,7 @@ async function playTurn(page) {
   const settle = async (x) => {
     for (let k = 0, prev = ''; k < 40; k++) {
       const key = `${x.myTurn}|${x.pa}|${x.hand.map((c) => c.name + c.off).join()}|${x.enemies.map((e) => e.hp).join()}`;
-      if (x.myTurn && x.paKnown && x.hand.some((c) => !c.off) && key === prev) return x;
+      if (x.myTurn && x.paKnown && (x.hand.some((c) => !c.off) || x.hand.every((c) => c.cost > x.pa || c.weapon)) && key === prev) return x; // tout grise faute de PA (ou arme deja utilisee) : rien a attendre
       if (!x.enemies.some((e) => e.hp > 0) && x.enemies.length) return x; // combat gagne
       prev = key; await sleep(250); x = await readFight(page);
     }
@@ -1060,15 +1060,24 @@ while (true) {
   // rate-limit de l'hebergeur (o2switch) : on respecte, pause 5 min
   if (/HTTP 429|Slow down/.test(text)) { S.status = 'rate-limit'; decide('Serveur sature (429) : pause 5 min pour ne pas aggraver'); log('RATE LIMIT 429 - pause 5 min'); await sleep(300000); await page.goto(COMBAT).catch(() => {}); idleSince = Date.now(); continue; }
 
-  // test de presence / ecran d'inactivite ("Tu etais inactif", place liberee) : on previent et on attend l'humain, on ne clique jamais dedans
-  const afk = /Tu étais inactif|ta place a été libérée/i.test(text);
-  if (afk || /Es-tu toujours là/.test(text)) {
+  // ecran d'inactivite ("Tu etais inactif", place liberee, progression sauvegardee) : pas un controle anti-bot, juste un slot rendu.
+  // On attend d'avoir le droit de jouer (energie, plage horaire) puis on recharge la page pour reprendre sa place, sans cliquer dedans.
+  if (/Tu étais inactif|ta place a été libérée/i.test(text)) {
+    log('INACTIVITE - place liberee, je reprends des que je peux jouer');
+    decide('Ecran d\'inactivite (place liberee) : j\'attends de pouvoir jouer puis je recharge la page pour reprendre ma place');
+    S.status = 'presence';
+    await gate();
+    await page.goto(COMBAT).catch(() => {});
+    autoClicked = false; idleSince = Date.now();
+    continue;
+  }
+  // test de presence : on previent et on attend l'humain, on ne clique jamais dedans
+  if (/Es-tu toujours là/.test(text)) {
     S.status = 'presence';
     if (!presenceAlerted) {
-      const what = afk ? 'ecran d\'inactivite (place liberee)' : 'test de presence';
-      decide(`${afk ? 'Ecran d\'inactivite' : 'Test de presence'} : je ne clique jamais dedans, j'attends le tien`);
-      log(`PRESENCE ${afk ? 'inactivite (place liberee)' : 'demandee'} - en attente de toi`);
-      alert(`${what}, clique dans la fenetre`); await page.bringToFront().catch(() => {}); presenceAlerted = true;
+      decide('Test de presence : je ne clique jamais dedans, j\'attends le tien');
+      log('PRESENCE demandee - en attente de toi');
+      alert('test de presence, clique dans la fenetre'); await page.bringToFront().catch(() => {}); presenceAlerted = true;
     }
     idleSince = Date.now();
     await sleep(2000);
