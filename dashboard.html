@@ -437,6 +437,7 @@ const CFG_META = {
   energyBuy: ["Acheter de l'energie", '1 = a la reserve, achete +10 (300 K le point) sans toucher a la reserve de kamas', 0, 1, 1],
   trainFights: ['Combats d\'entrainement', 'par seance, lancee avec le bouton Entrainement', 1, 50, 1],
   trainLevel: ['Niveau d\'entrainement', 'zone visee (niveau max), perdus d\'avance', 1, 300, 5],
+  climbWins: ['Montee de zone', 'victoires de chasse d\'affilee avant le palier suivant, 0 = coupee ; une defaite fait redescendre', 0, 200, 1],
   manualFight: ['Combat manuel', '1 = le moteur du bot joue les cartes, 0 = mode Auto du jeu', 0, 1, 1],
   energyResume: ['Energie de reprise', 'apres la reserve, la chasse reprend a ce niveau (1 point / 6 min)', 1, 1000, 1],
 };
@@ -641,7 +642,7 @@ function render(d) {
 }
 
 /* ---------- historique : onglets + filtres ---------- */
-const FILTERS = { tout: null, combats: /VICTOIRE|DEFAITE/, gestion: /EQUIPE|VENDU|COFFRE|DECK|CARAC|FUSION|HDV|CONFIG/, alertes: /ERREUR|BLOQUE|PRESENCE|429|EXPIREE|TROP|ENERGIE/ };
+const FILTERS = { tout: null, combats: /VICTOIRE|DEFAITE/, gestion: /EQUIPE|VENDU|COFFRE|DECK|CARAC|FUSION|HDV|CONFIG/, alertes: /ERREUR|BLOQUE|PRESENCE|429|EXPIREE|TROP|ENERGIE|INDICE/ };
 $('filters').innerHTML = Object.keys(FILTERS).map((k) => `<button type="button" data-f="${k}" aria-pressed="${k === filter}">${k}</button>`).join('');
 $('filters').onclick = (e) => {
   const f = e.target.closest('button')?.dataset.f;

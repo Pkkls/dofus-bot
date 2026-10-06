@@ -17,7 +17,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300] }; // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200] }; // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -61,7 +61,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['stats', 'learn', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['stats', 'learn', 'hints', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -477,6 +477,7 @@ async function playTurn(page) {
   const s = S.stats ?? NO_STATS;
   if (st.turn <= 1 || !fightMem.profile) fightMem = { turn: st.turn, endHp: null, inc: 0, profile: trainLeft > 0 ? pickTrainProfile() : pickProfile(), ehp0: st.enemies.reduce((a, e) => a + e.max, 0) };
   fightMem.ehp = st.enemies.reduce((a, e) => a + e.hp + e.prot, 0);
+  fightMem.foes = st.enemies.map((e) => e.name); // pour ranger l'indice de defaite par monstre
   fightMem.turn = st.turn;
   const P = PROFILES[fightMem.profile];
   if (fightMem.incTurn !== st.turn) { // une seule estimation par tour, meme si le tour est joue en plusieurs appels
@@ -548,12 +549,29 @@ const pickGroup = (txt, maxRank) => {
 };
 
 // zone d'entrainement : dans "Toutes les zones", celle dont le niveau max est le plus proche de CFG.trainLevel
-async function pickHardZone(page) {
+// toutes les zones [href, niveau max, nom] triees par niveau max ; lues une fois par lancement
+let ZONES = null;
+async function allZones(page) {
+  if (ZONES?.length) return ZONES;
   await page.goto(BASE + '/chasse');
   await page.getByRole('link', { name: /Toutes les zones/ }).click({ timeout: 20000 });
   await sleep(2500);
-  const z = (await page.locator('a[href^="/chasse?zone="]').evaluateAll((els) => els.map((e) => [e.getAttribute('href'), e.innerText])))
-    .map(([h, t]) => [h, +(t.match(/Niveau \d+[–-](\d+)/)?.[1] ?? 0), t.split('\n')[0]]).filter(([, m]) => m);
+  ZONES = (await page.locator('a[href^="/chasse?zone="]').evaluateAll((els) => els.map((e) => [e.getAttribute('href'), e.innerText])))
+    .map(([h, t]) => [h, +(t.match(/Niveau \d+[–-](\d+)/)?.[1] ?? 0), t.split('\n')[0]]).filter(([, m]) => m).sort((a, b) => a[1] - b[1]);
+  return ZONES;
+}
+// palier de zone suivant (dir 1) ou precedent (dir -1) par niveau max ; reste sur place en bout de liste
+async function climbZone(page, cur, dir, why) {
+  const z = await allZones(page);
+  const curMax = z.find(([h]) => h === cur)?.[1] ?? S.level;
+  const next = dir > 0 ? z.find(([, m]) => m > curMax) : [...z].reverse().find(([, m]) => m < curMax);
+  if (!next) { decide(`Zone : deja au ${dir > 0 ? 'plus haut' : 'plus bas'} palier (niveau max ${curMax})`); return cur; }
+  decide(`Zone ${dir > 0 ? 'montee' : 'descente'} : ${next[2]} (niveau max ${next[1]}, avant ${curMax}), ${why}`);
+  log(`ZONE ${dir > 0 ? 'montee' : 'descente'} ${next[2]} niv ${next[1]}`);
+  return next[0];
+}
+async function pickHardZone(page) {
+  const z = [...(await allZones(page))];
   const pick = z.sort((a, b) => Math.abs(a[1] - CFG.trainLevel) - Math.abs(b[1] - CFG.trainLevel))[0];
   if (pick) decide(`Entrainement : zone ${pick[2]} (niveau max ${pick[1]}, cible ${CFG.trainLevel}), parmi ${z.length} zones`);
   return pick?.[0];
@@ -917,7 +935,7 @@ await managePass(page);
 let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastText = '', combats = 0;
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
-let trainLeft = 0, trainZone = null; // entrainement demande depuis le tableau de bord
+let trainLeft = 0, trainZone = null, climbStreak = 0, climbDir = 0; // entrainement demande depuis le tableau de bord
 let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
@@ -975,9 +993,20 @@ while (true) {
     if (adventure && !win) { decide(`Aventure perdue : deck revu, puis ${CFG.huntWins} victoires en chasse avant de retenter`); huntLeft = CFG.huntWins; deckDue = true; log('AVENTURE bloquee - deck revu, ' + CFG.huntWins + ' victoires en chasse puis retente'); }
     else if (!adventure && !fight) {
       results.push(win); if (results.length > 10) results.shift(); winsSinceStrike = win ? winsSinceStrike + 1 : 0;
+      if (CFG.climbWins) { if (!win) { climbStreak = 0; climbDir = -1; } else if (++climbStreak >= CFG.climbWins) { climbStreak = 0; climbDir = 1; } }
       if (win && huntLeft > 0 && --huntLeft === 0) backToAdventure = true;
     }
     if (winsSinceStrike >= 30) strikes = 0;
+    if (!win) { // l'ecran de defaite donne un indice sur la mecanique du monstre : texte complet en dump, indice au log et dans S.hints
+      writeFileSync(`dump/defaite-${Date.now()}.txt`, text);
+      const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+      const i = lines.findIndex((l) => /indice|astuce|conseil|m[ée]canique|faiblesse|pense [àa]/i.test(l));
+      const hint = i >= 0 ? lines.slice(i, i + 3).join(' / ') : lines.slice(Math.max(0, lines.findIndex((l) => /Défaite/.test(l))), lines.findIndex((l) => /Défaite/.test(l)) + 4).join(' / ');
+      const foes = fightMem.foes?.join(', ') || '?';
+      ((S.hints ??= {})[foes] = { hint, at: Date.now() });
+      log(`INDICE (${foes}) ${hint.slice(0, 300)}`);
+      decide(`Defaite contre ${foes} : indice du jeu "${hint.slice(0, 200)}"`);
+    }
     if (fight === 'entrainement' && fightMem.profile) {
       const dmgFrac = fightMem.ehp0 ? Math.max(0, Math.min(1, 1 - fightMem.ehp / fightMem.ehp0)) : 0;
       rewardTrain(fightMem.profile, fightMem.turn, dmgFrac);
@@ -1044,6 +1073,12 @@ while (true) {
       await safe('deck', optimizeDeck(page));
       if (strikes >= 2 || !zone) zone = (await pickZone(page, zone, true)) ?? zone;
       await attackGroup(page, zone, 0);
+      continue;
+    }
+    if (climbDir && zone && !adventure) { // chasse : on monte tant qu'on gagne, on redescend a la premiere defaite
+      zone = await climbZone(page, zone, climbDir, climbDir > 0 ? `${CFG.climbWins} victoires d'affilee` : 'defaite');
+      climbDir = 0;
+      await attackGroup(page, zone, strikes ? 0 : CFG.maxGroup);
       continue;
     }
     if (trainLeft > 0 && CFG.manualFight) {
