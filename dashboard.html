@@ -318,7 +318,7 @@ details[open].card > summary .chev { transform: rotate(180deg); }
   </section>
 
   <section class="kpis health" aria-label="Progression et sante">
-    <div class="kpi"><div class="l"><svg class="i"><use href="#i-flag"/></svg>Progression vers le niveau 200</div><div class="v num" id="g-lvl">-</div><div class="s" id="g-eta"></div><svg class="spark" id="g-spark" viewBox="0 0 240 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+    <div class="kpi"><div class="l"><svg class="i"><use href="#i-flag"/></svg><span id="g-lvlL">Progression vers le niveau 200</span></div><div class="v num" id="g-lvl">-</div><div class="s" id="g-eta"></div><svg class="spark" id="g-spark" viewBox="0 0 240 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
     <div class="kpi"><div class="l"><svg class="i"><use href="#i-alert"/></svg>Incidents, 24 heures</div><div class="v num" id="g-inc">-</div><div class="s" id="g-incS"></div></div>
     <div class="kpi"><div class="l"><svg class="i"><use href="#i-wifi"/></svg>Etat du serveur</div><div class="v" id="g-srv">-</div><div class="s" id="g-srvS"></div></div>
     <div class="kpi"><div class="l"><svg class="i"><use href="#i-shield"/></svg>Ressources</div><div class="v num" id="g-res">-</div><div class="s" id="g-resS"></div></div>
@@ -729,10 +729,12 @@ function render(d) {
 
   // progression et sante
   const LH = S.levelHist ?? [];
-  $('g-lvl').textContent = S.level ? `niv. ${S.level}` : '-';
+  const rush = (state?.CFG?.rushPrestige ?? 0) > (S.prestige ?? 0); // mode rush prestige : objectif et phase en cours
+  $('g-lvlL').textContent = rush ? `Rush prestige ${S.prestige ?? 0} vers ${state.CFG.rushPrestige}` : 'Progression vers le niveau 200';
+  $('g-lvl').textContent = S.level ? `niv. ${S.level}${S.prestige ? ` · prestige ${S.prestige}` : ''}` : '-';
   const ref = LH.filter((x) => now - x.t <= 6 * 3600000)[0];
   const lvlRate = ref && now - ref.t > 600000 && S.level > ref.lvl ? (S.level - ref.lvl) / ((now - ref.t) / 3600000) : 0;
-  $('g-eta').textContent = S.level >= 200 ? 'niveau maximum atteint' : lvlRate ? `+${lvlRate.toFixed(1).replace('.', ',')} niv/h, niveau 200 vers ${hm(now + ((200 - S.level) / lvlRate) * 3600000)} (au rythme actuel)` : 'vitesse en cours de mesure';
+  $('g-eta').textContent = S.level >= 200 && rush ? (S.rushAsc ? `Ascension : etage ${S.ascBest ?? 0} sur ${S.rushAsc} exiges avant le prestige` : 'niveau 200 : prestige au prochain passage') : S.level >= 200 ? 'niveau maximum atteint' : lvlRate ? `+${lvlRate.toFixed(1).replace('.', ',')} niv/h, niveau 200 vers ${hm(now + ((200 - S.level) / lvlRate) * 3600000)} (au rythme actuel)` : 'vitesse en cours de mesure';
   const lp = LH.filter((x) => now - x.t <= 24 * 3600000);
   if (lp.length > 1) { const t0 = lp[0].t, t1 = now, l0 = lp[0].lvl, l1 = Math.max(l0 + 1, S.level); const pts = lp.map((x) => `${((x.t - t0) / (t1 - t0)) * 240},${26 - ((x.lvl - l0) / (l1 - l0)) * 24}`).join(' ') + ` 240,${26 - ((S.level - l0) / (l1 - l0)) * 24}`; $('g-spark').innerHTML = `<polyline points="${pts}" fill="none" stroke="${tok('--accent')}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`; }
   const hh = st.health ?? {}, inc = (hh.block ?? 0) + (hh.bug ?? 0) + (hh.sat ?? 0) + (hh.manual ?? 0) + (hh.stall ?? 0) + (hh.error ?? 0);

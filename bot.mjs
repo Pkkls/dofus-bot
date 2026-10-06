@@ -1516,6 +1516,25 @@ async function abyssChoice(page, text) {
   if (await next.isEnabled().catch(() => false)) { const lbl = (await next.innerText().catch(() => '')).trim(); await next.click().catch(() => {}); log(`ABYSSES ${lbl}`); decide(`Abysses : ${lbl}`); return true; }
   return false;
 }
+// HDV, vente : onglet Vendre, inventaire en boutons-images. Etape 1 : capture du formulaire de mise en vente d'un objet (dump/hdv_sell_form.txt), rien n'est vendu
+async function hdvSell(page) {
+  await page.goto(BASE + '/hdv');
+  const main = page.locator('main');
+  await main.locator('select').first().waitFor({ timeout: 20000 });
+  await main.locator('button, a').filter({ hasText: /^\s*Vendre\s*$/ }).first().click({ timeout: 5000 });
+  await main.getByText(/Mes ventes en cours/).waitFor({ timeout: 10000 });
+  const items = main.locator('button[type=submit]');
+  const n = await items.count();
+  for (let i = 0; i < n; i++) { // premier objet ni lie ni favori
+    const t = `${await items.nth(i).innerText().catch(() => '')} ${await items.nth(i).getAttribute('title').catch(() => '')}`;
+    if (/LIÉ|★/.test(t)) continue;
+    await items.nth(i).click(); await sleep(1500);
+    writeFileSync('dump/hdv_sell_form.txt', `${await main.innerText()}\n\n=== CONTROLES\n${await main.locator('button, input, select, a').evaluateAll((els) => els.filter((e) => e.type !== 'submit').map((e) => `${e.tagName}${e.type ? '[' + e.type + ']' : ''}${e.disabled ? ' [off]' : ''} "${(e.innerText || e.value || e.placeholder || '').replace(/\s+/g, ' ').slice(0, 80)}" ${e.getAttribute('aria-label') || ''}`).join('\n'))}`);
+    log('HDV formulaire de vente capture : dump/hdv_sell_form.txt');
+    return true;
+  }
+  return false;
+}
 // Mode rush prestige (CFG.rushPrestige = prestige vise) : avant le 200, tout pour l'XP (ni abysses ni arene, energie achetee) ;
 // au 200, prestige des que la page le permet, sinon la condition lue (etage d'Ascension) est remplie d'abord. Ecrans captures : dump/prestige.txt, dump/ascension.txt
 const rushing = () => CFG.rushPrestige > (S.prestige ?? 0);
@@ -1584,7 +1603,7 @@ let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
-  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: (p) => { S.hdvBrokenUntil = 0; return hdvBuy(p); }, prestige: (p) => { rushNext = 0; return rushPrestige(p); }, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, abysses: startAbyss, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
+  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: (p) => { S.hdvBrokenUntil = 0; return hdvBuy(p); }, prestige: (p) => { rushNext = 0; return rushPrestige(p); }, hdvvente: hdvSell, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, abysses: startAbyss, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
   aventure: async (p) => { huntLeft = 0; S.advBlockedUntil = 0; xpHard = false; S.xpHard = false; return goAdventure(p); }, // l'aventure reste ensuite prioritaire (wantAdventure)
 };
