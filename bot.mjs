@@ -65,7 +65,7 @@ const KEEP = ['arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax'
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
-const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'zone', 'aventure', 'f5'];
+const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'zone', 'aventure', 'f5'];
 // horaires en minutes depuis minuit ; une plage peut passer minuit (ex. 540 -> 60 = 09:00 -> 01:00)
 const inWindow = (m, a, b) => a === b || (a < b ? m >= a && m < b : m >= a || m < b);
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -628,19 +628,34 @@ async function gate() {
   }
 }
 // a la reserve : lit l'energie exacte, et si CFG.energyBuy, achete +10 sans toucher a kamasReserve
-async function buyEnergy(page) {
-  await page.goto(BASE + '/jeu');
+// max (bouton du tableau de bord) : le plein, autant que les kamas le permettent
+async function buyEnergy(page, max = false) {
+  await page.goto(BASE + '/jeu', { waitUntil: 'networkidle' });
   await page.getByText(/^Acheter \(/).waitFor({ timeout: 20000 });
+  await sleep(2000); // clic ignore tant que la page n'est pas hydratee
   const read = async () => { const j = parseJeu(await page.locator('main').innerText()); if (j) { setEnergy(j.e, j.max); if (j.next) S.energyAt -= REGEN - j.next; } return j; };
   const j = await read();
+  if (max) {
+    const b = page.locator('button', { hasText: /\(max\) ·/ });
+    if (!(await b.count())) { decide(`Energie ${j?.e}/${j?.max} : pas de bouton max (plein ou pas assez de kamas)`); return; }
+    const label = (await b.innerText()).replace(/\s+/g, ' ');
+    decide(`Energie max demandee depuis le tableau de bord : ${label}`);
+    await b.click();
+    await sleep(3000);
+    await page.reload({ waitUntil: 'networkidle' });
+    const after = await read();
+    log(after?.e > j.e ? `ENERGIE achetee (${label}) : ${after.e}/${after.max}` : `ENERGIE achat sans effet (${label}, ${after?.e ?? '?'}/${j.max})`);
+    return;
+  }
   if (!j || j.e > CFG.energyReserve) return;
   if (!CFG.energyBuy) { decide(`Energie ${j.e}/${j.max} : achat coupe (reglage), j'attends la recharge`); return; }
   if (j.left < 10 || S.kamas - 10 * j.price < CFG.kamasReserve) { decide(`Energie ${j.e}/${j.max} : pas d'achat (${S.kamas} K, reserve ${CFG.kamasReserve} K, quota ${j.left})`); return; }
   decide(`Energie ${j.e}/${j.max} : j'achete +10 (${10 * j.price} K), il reste ${S.kamas - 10 * j.price} K au-dessus de la reserve de ${CFG.kamasReserve} K`);
-  await page.getByRole('button', { name: /^\+10 ·/ }).click();
+  await page.locator('button', { hasText: /^\+10 ·/ }).click(); // nom accessible = aria-label "3 000 kamas", d'ou hasText
   const ok = page.getByRole('button', { name: /^Confirmer/ });
   if (await ok.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await ok.click();
-  await sleep(2000);
+  await sleep(3000);
+  await page.reload({ waitUntil: 'networkidle' });
   const after = await read();
   if (after?.e > j.e) { S.kamas -= 10 * j.price; log(`ENERGIE achetee +10 (${10 * j.price} K) : ${after.e}/${after.max}`); }
   else log(`ENERGIE achat sans effet (${after?.e ?? '?'}/${j.max})`);
@@ -697,7 +712,7 @@ let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
-  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss,
+  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true),
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
   aventure: async (p) => { huntLeft = 0; await p.goto(BASE + '/aventure'); await p.getByRole('button', { name: 'Combattre' }).click({ timeout: 20000 }); return true; },
 };
