@@ -36,7 +36,7 @@ Le site affiche un test de presence ("Es-tu toujours la ? Clique sur le chiffre 
 | HDV | Achat pour les emplacements vides uniquement | code, jamais declenche |
 | Caracs | Vitalite (vitShare) puis stat de l'element dominant du deck | verifie |
 | Horaires et rythme | `gate()` avant chaque combat : plage horaire (scheduleOn, activeFrom -> activeTo en minutes, peut passer minuit) et plafond maxFightsPerHour (heure glissante). Attente sans requete, reprise seule | verifie (repos, plafond, reprise) |
-| Energie | 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee par combat (1, boss/arene 2), estimee entre deux. A sec ("Plus assez d'energie" ou estimation < 1) : `gate()` attend energyResume points (statut recharge), ou 2 points des que le boss annonce arrive | code le 06/10, a verifier |
+| Energie | 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee par combat (1, boss/arene 2), estimee entre deux. A la reserve energyReserve (2, gardee pour le boss) ou sur "Plus assez d energie" : plus de chasse/aventure/arene, `gate()` attend energyResume (6) points (statut recharge) ; seul le boss annonce passe pendant la recharge | code le 06/10, a verifier |
 | Reseau | Compteur par type, limiteur maxReqPerMin, images /img/ bloquees sauf pendant le test de presence | verifie (5 a 14 req/min) |
 
 ## Architecture (bot.mjs, un seul fichier)

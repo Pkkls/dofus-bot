@@ -17,7 +17,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyResume: [2, 1, 1000] }; // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000] }; // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -370,7 +370,7 @@ async function attackGroup(page, zone, maxRank) {
   const t = await page.locator('main').innerText();
   const en = t.match(/Énergie : (\d+)\/(\d+)/);
   if (en) setEnergy(+en[1], +en[2]);
-  if (en && +en[1] < 1) { S.recharging = true; await gate(); return attackGroup(page, zone, maxRank); }
+  if (en && +en[1] <= CFG.energyReserve) { S.recharging = true; decide(`Energie ${en[1]} <= reserve ${CFG.energyReserve} : pas d'attaque, retour a l'ecran de fin pour recharger`); await page.goto(COMBAT); return; }
   const i = pickGroup(t, maxRank);
   decide(`Groupe ${i + 1} attaque : le plus gros dont la difficulte <= ${RANK[maxRank]}`);
   await page.getByRole('button', { name: 'Attaquer' }).nth(i).click();
@@ -600,18 +600,19 @@ async function gate() {
     S.fightsHour = fightTimes.length;
     const off = CFG.scheduleOn && !inWindow(mins, CFG.activeFrom, CFG.activeTo);
     const capped = CFG.maxFightsPerHour > 0 && fightTimes.length >= CFG.maxFightsPerHour;
-    // energie epuisee : attend CFG.energyResume points, ou 2 points si le boss annonce vient d'arriver (il passe avant)
-    const e = energyNow();
-    if (e != null && e < 1) S.recharging = true;
-    if (S.recharging && (e == null || e >= CFG.energyResume || (e >= 2 && S.boss?.eta && Date.now() > S.boss.eta + 5000))) S.recharging = false;
+    // energie : a la reserve (gardee pour le boss), recharge jusqu'a energyResume ; le boss annonce passe des qu'il y a ses 2 points
+    const e = energyNow(), resume = Math.max(CFG.energyResume, CFG.energyReserve + 1);
+    if (e != null && e <= CFG.energyReserve) S.recharging = true;
+    if (S.recharging && (e == null || e >= resume)) S.recharging = false;
+    if (!off && !capped && S.recharging && e >= 2 && S.boss?.eta && Date.now() > S.boss.eta + 5000) return; // la boucle ne fait que le boss pendant la recharge
     if (!off && !capped && !S.recharging) { S.resumeAt = null; if (said) decide(`Reprise : ${said === 'nrj' ? `energie a ${e}` : 'dans la plage horaire et sous le plafond'}`); return; }
     if (off) {
       const wait = ((CFG.activeFrom - mins + 1440) % 1440) * 60000;
       S.status = 'repos'; S.resumeAt = Date.now() + wait;
       if (said !== 'off') { decide(`Hors plage horaire (${hhmm(CFG.activeFrom)} -> ${hhmm(CFG.activeTo)}) : arret jusqu'a ${hhmm(CFG.activeFrom)}`); log(`REPOS jusqu'a ${hhmm(CFG.activeFrom)}`); said = 'off'; }
     } else if (!capped) {
-      S.status = 'recharge'; S.resumeAt = S.energyAt + (CFG.energyResume - S.energy) * REGEN;
-      if (said !== 'nrj') { decide(`Plus d'energie (${e}) : recharge 1 point / 6 min, reprise a ${CFG.energyResume} points vers ${new Date(S.resumeAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`); log(`ENERGIE ${e} - recharge jusqu'a ${CFG.energyResume}`); said = 'nrj'; }
+      S.status = 'recharge'; S.resumeAt = S.energyAt + (resume - S.energy) * REGEN;
+      if (said !== 'nrj') { decide(`Energie ${e} <= reserve ${CFG.energyReserve} (gardee pour le boss) : recharge 1 point / 6 min, reprise a ${resume} points vers ${new Date(S.resumeAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`); log(`ENERGIE ${e} - recharge jusqu'a ${resume}`); said = 'nrj'; }
     } else {
       S.status = 'plafond'; S.resumeAt = fightTimes[0] + 3600000;
       if (said !== 'cap') { decide(`Plafond atteint : ${fightTimes.length} combats sur la derniere heure (max ${CFG.maxFightsPerHour}), reprise vers ${new Date(S.resumeAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`); log(`PLAFOND ${fightTimes.length}/h`); said = 'cap'; }
@@ -768,6 +769,7 @@ while (true) {
       if (r === true) { fight = 'boss'; lastBoss = Date.now(); continue; }
       nextBossCheck = Date.now() + (r > 0 ? r + 5000 : 150000); // juste apres l'arrivee annoncee, sinon dans 2.5 min
     }
+    if (S.recharging) { await sleep(1000); continue; } // recharge : rien d'autre que le boss
     // arene toutes les CFG.arenaEvery minutes, si assez d'energie et un adversaire plus faible
     if (CFG.arenaEvery > 0 && Date.now() - lastArena > CFG.arenaEvery * 60000) {
       lastArena = S.last.arene = Date.now();
