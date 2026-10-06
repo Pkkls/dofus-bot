@@ -165,7 +165,10 @@ const invItems = (main) => main.locator('button:has(img)').filter({ hasNotText: 
 const SLOTS = ['Chapeau', 'Cape', 'Amulette', 'Anneau', 'Ceinture', 'Bottes', 'Arme', 'Bouclier', 'Familier', 'Dofus / Trophée'];
 // Vente : pas d'anneau (2 emplacements, la comparaison ne voit qu'un anneau), ni familier, ni Dofus/Trophee
 const SELLABLE = ['Chapeau', 'Cape', 'Amulette', 'Ceinture', 'Bottes', 'Arme', 'Bouclier'];
-const SELL_RARITY = new Set(['COMMUN', 'PEU COMMUN', 'RARE']);
+const SELL_RARITY = new Set(['COMMUN', 'PEU COMMUN']); // RARE et au-dessus : jamais vendus
+// vente prudente, dans le doute on garde : favori, rarete RARE+, tiers fusionne ou Rayonnant, liste NEVER_SELL, comparaison incomplete
+const NEVER_SELL = ['Gelano']; // noms de base (sans tiers) des objets rares a garder quoi qu'il arrive
+const canSell = (d) => !d.fav && SELL_RARITY.has(d.rarity) && !/ · (Tiers \d+|Rayonnant)$/.test(d.name) && !NEVER_SELL.includes(baseName(d.name)) && !d.partial;
 // panneau de detail : "Nom / RARETE / Emplacement / Niveau N / stats / Exemplaires..." ; on prend la derniere occurrence (la grille au-dessus contient des badges)
 const parseDetail = (t) => {
   const all = [...t.matchAll(/(?:^|\n)(★\n)?([^\n]+)\n(COMMUN|PEU COMMUN|RARE|ÉPIQUE|MYTHIQUE|LÉGENDAIRE)\n([^\n]+)\nNiveau (\d+)\n/g)];
@@ -173,7 +176,7 @@ const parseDetail = (t) => {
   if (!m) return null;
   const detail = t.slice(m.index);
   const own = scoreItem(detail.match(/\nNiveau \d+\n([\s\S]*?)\nExemplaires/)?.[1] ?? '');
-  return { name: m[2].trim(), fav: !!m[1], rarity: m[3], slot: m[4].trim(), level: +m[5], own, diff: invScore(detail), cmp: detail.match(/Comparé à ([^\n]+)/)?.[1] ?? null };
+  return { name: m[2].trim(), fav: !!m[1], rarity: m[3], slot: m[4].trim(), level: +m[5], own, diff: invScore(detail), cmp: detail.match(/Comparé à ([^\n]+)/)?.[1] ?? null, partial: /autres différences/.test(detail) };
 };
 async function equipFromInventory(page) {
   await page.goto(BASE + '/inventaire');
@@ -213,7 +216,7 @@ async function equipFromInventory(page) {
       if (!d || !sameSlot(d.slot, slot) || !(await main.getByRole('button', { name: /^Équiper/ }).first().isEnabled().catch(() => false))) continue; // filtre pas encore applique : objet d'un autre type ignore
       seen.push({ i, ...d });
       if (d.diff > best) { best = d.diff; bestIdx = i; bestName = d.name; }
-      if (d.diff < 0 && SELLABLE.includes(slot) && SELL_RARITY.has(d.rarity) && !d.fav) junk.push([d.name, d.diff]);
+      if (d.diff < 0 && SELLABLE.includes(slot) && canSell(d)) junk.push([d.name, d.diff]);
     }
     decide(`Inventaire ${slot} : ${bestIdx >= 0 ? `j'equipe ${bestName} (score +${Math.round(best)})` : 'rien de mieux que ma piece'}${junk.length ? `, ${junk.length} moins bon(s) a vendre` : ''}`);
     if (bestIdx >= 0 && (await openItem(main, items.nth(bestIdx)))?.name === bestName) {
@@ -281,8 +284,8 @@ async function optimizeRings(page, main) {
   const [n1, n2] = await worn();
   const minWorn = Math.min(scoreOf(n1) ?? -Infinity, scoreOf(n2) ?? -Infinity);
   const spare = new Set(sack.filter((r) => r.level >= S.level - CFG.spareWindow).sort((a, b) => b.own - a.own).slice(0, CFG.ringSpare));
-  // vendu : hors reserve, moins bon que les deux portes, rarete Commun..Rare, pas favori
-  const junk = sack.filter((r) => !spare.has(r) && r.own < minWorn && SELL_RARITY.has(r.rarity) && !r.fav).map((r) => [r.name, r.own - minWorn]);
+  // vendu : hors reserve, moins bon que les deux portes, et canSell (dans le doute on garde)
+  const junk = sack.filter((r) => !spare.has(r) && r.own < minWorn && canSell(r)).map((r) => [r.name, r.own - minWorn]);
   decide(`Anneaux : ${sack.length} au sac, reserve ${[...spare].map((r) => `${r.name} (${Math.round(r.own)})`).join(', ') || 'aucune'}, ${junk.length} a vendre`);
   await sellJunk(page, main, 'Anneau', junk);
 }
@@ -490,6 +493,8 @@ if (process.argv[2] === 'test') {
   assert.equal(scoreItem('Vendre · 1 440 K\nNiveau 72 requis'), 0);
   const P = parseStats('\nForce\n45 (0 +45)\nIntelligence\n25 (0 +25)\nChance\n70 (0 +70)\nAgilité\n65 (0 +65)\nTerre\t4\t0 %\nFeu\t8\t0 %\nEau\t9\t0 %\nPuissance 85 · Soins 0');
   assert.deepEqual([P.Force, P.Chance, P.Puissance, P.dmg.Eau], [45, 70, 85, 9]);
+  const it = { fav: false, rarity: 'COMMUN', name: 'Coiffe Bouftou', partial: false };
+  assert.deepEqual([canSell(it), canSell({ ...it, rarity: 'RARE' }), canSell({ ...it, name: 'Coiffe Bouftou · Tiers 2' }), canSell({ ...it, name: 'Gelano' }), canSell({ ...it, partial: true }), canSell({ ...it, fav: true })], [true, false, false, false, false, false]);
   setEnergy(0, 200); S.energyAt -= 2.5 * REGEN; assert.equal(energyNow(), 2);
   spendEnergy(1); assert.equal(energyNow(), 1); S.energyAt -= 0.5 * REGEN; assert.equal(energyNow(), 2); // le point en cours de recharge est garde
   setEnergy(199); S.energyAt -= 5 * REGEN; assert.equal(energyNow(), 200);

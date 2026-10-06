@@ -30,7 +30,7 @@ Le site affiche un test de presence ("Es-tu toujours la ? Clique sur le chiffre 
 | Arene | Adversaire au plus faible niveau d'opti s'il est sous le notre, energie >= arenaMinEnergy | verifie (1V 1D) |
 | Coffres | Ouvre tout (gagnes + cadeaux), achete en gardant kamasReserve | gagnes verifies, cadeaux corriges le 06/10, a confirmer |
 | Deck | Garde les cartes utilitaires, complete par degats/PA selon les stats de /personnage | verifie |
-| Inventaire | Equipe le meilleur score par type, vend (2 clics) le moins bon Commun..Rare | verifie au kama pres |
+| Inventaire | Equipe le meilleur score par type, vend (2 clics) le moins bon seulement si canSell : Commun ou Peu commun, pas favori, pas de tiers/Rayonnant, hors NEVER_SELL (Gelano), comparaison complete (pas de "autres differences"). Dans le doute on garde. Incident 06/10 01:05 : une vingtaine d anneaux vendus depuis l onglet Chapeau (filtre pas applique), corrige par 11b68bf | verifie au kama pres |
 | Anneaux | `optimizeRings` : decouverte du score de l'anneau 2, puis le meilleur du sac remplace le plus faible ; reserve ringSpare (niveau >= mon niveau - spareWindow), vente du reste | paire passee a 107 + 100 en reel ; boucle de permutation corrigee le 06/10, a reverifier |
 | Fusion | 3 exemplaires au moins aussi bons que la piece portee | debloque le 06/10, a confirmer |
 | HDV | Achat pour les emplacements vides uniquement | code, jamais declenche |
