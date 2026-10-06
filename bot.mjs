@@ -1470,6 +1470,7 @@ const abyssEnd = () => {
   S.abyssRun = null;
 };
 async function abyssChoice(page, text) {
+  if (rushing() && (S.level ?? 0) < 200) return false; // rush prestige : la descente en cours reste ouverte (pas d'XP), on farme
   if (S.abyssRun) { S.abyssRun.picks ??= []; S.abyssRun.bonus ??= {}; } // descente persistee par une ancienne version
   if (S.abyssRun && /\/abysses/.test(page.url()) && /Prêt à plonger/.test(text) && !/DESCENTE EN COURS/.test(text)) { abyssEnd(); return false; } // accueil revenu : descente finie (defaite non vue, ex. redemarrage)
   // victoire d'etage : lien "Choisir ma recompense" sous le combat termine (le titre "Les Abysses · Tour N" reste affiche)
@@ -1937,7 +1938,7 @@ while (true) {
     if (CFG.manualFight && await step.isVisible().catch(() => false)) { // "Suivant en auto" lancerait le combat en Auto
       decide('Combat suivant en manuel : Etape suivante');
       await step.click(); autoClicked = false; await sleep(3000);
-    } else if (S.abyssRun && Date.now() - S.abyssRun.start < 3 * 3600000 && !/\/abysses/.test(page.url())) { // descente en cours : on la continue
+    } else if (S.abyssRun && !rushing() && Date.now() - S.abyssRun.start < 3 * 3600000 && !/\/abysses/.test(page.url())) { // descente en cours : on la continue
       decide(`Abysses : descente en cours (etage ${S.abyssRun.floor ?? '?'}), j'y retourne`);
       await page.goto(BASE + '/abysses').catch(() => {});
     } else if (rushing() && S.level >= 200 && Date.now() > rushNext) { // rush prestige : niveau max, l'XP ne sert plus
