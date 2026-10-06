@@ -18,7 +18,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMinSec: [90, 0, 570], breakMaxSec: [480, 0, 570], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], hardEvery: [10, 0, 200], stuckSec: [15, 5, 120], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMinSec: [90, 0, 570], breakMaxSec: [480, 0, 570], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], hardEvery: [10, 0, 200], wisShare: [0.3, 0, 1], stuckSec: [15, 5, 120], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -92,6 +92,7 @@ let ELEM_SHARE = { Neutre: 0.2, Terre: 0.2, Feu: 0.2, Eau: 0.2, Air: 0.2 };
 const STAT_ELEM = { Force: ['Terre', 'Neutre'], Intelligence: ['Feu'], Chance: ['Eau'], Agilité: ['Air'] };
 const weight = (stat, pct) => {
   if (STAT_ELEM[stat]) return 0.2 + 1.5 * STAT_ELEM[stat].reduce((s, e) => s + ELEM_SHARE[e], 0);
+  if (stat === 'Sagesse' && typeof wisdomShareNow === 'function') return (S.level ?? 0) >= 200 ? 0.1 : (0.2 + 1.5 * Math.max(...Object.values(ELEM_SHARE))) * Math.min(2, wisdomShareNow() / Math.max(0.05, CFG.wisShare)); // XP tant qu'on n'est pas 200
   if (stat === 'Vitalité' && typeof vitShareNow === 'function') return Math.min(3, Math.max(0.5, vitShareNow() / Math.max(0.05, CFG.vitShare))); // meme besoin que les caracs
   const de = stat.match(/^Dommages (Neutre|Terre|Feu|Eau|Air)$/);
   if (de) return 0.5 + 5 * ELEM_SHARE[de[1]];
@@ -406,6 +407,16 @@ const vitShareNow = () => {
   const adj = B.loss > 0.15 || B.minHp < 0.35 ? 0.15 : B.minHp < 0.5 ? 0.05 : B.minHp > 0.75 && B.loss < 0.05 ? -0.1 : 0;
   return Math.min(0.6, Math.max(0.05, CFG.vitShare + adj));
 };
+// Sagesse (+XP par point, inutile au niveau 200) : part des caracs adaptee au danger mesure en combat (S.learn.build)
+const wisdomShareNow = () => {
+  if ((S.level ?? 0) >= 200) return 0;
+  const B = S.learn?.build, base = CFG.wisShare;
+  if (!B || B.n < 10) return base;
+  if (B.loss > 0.15 || B.minHp < 0.35) return 0; // on meurt trop : degats et vitalite d'abord
+  if (B.minHp < 0.5) return base / 2;
+  if (B.minHp > 0.75 && B.loss < 0.05) return Math.min(0.6, base * 1.5); // confortable : on pousse l'XP
+  return base;
+};
 const vitWhy = () => { const B = S.learn?.build; return B?.n >= 10 ? `PV mini moyens ${Math.round(B.minHp * 100)} %, defaites ${Math.round(B.loss * 100)} %` : 'reglage de base'; };
 // Points de carac : 80 % dans la stat de l'element dominant du deck, CFG.vitShare en Vitalite
 const mainStat = () => Object.entries(STAT_ELEM).map(([s, es]) => [s, es.reduce((a, e) => a + ELEM_SHARE[e], 0)]).sort((a, b) => b[1] - a[1])[0][0];
@@ -416,9 +427,20 @@ async function allocateStats(page) {
   const total = await pts();
   if (!total) return;
   const main = mainStat();
-  const vit = vitShareNow();
-  decide(`Caracs : ${total} points, ${Math.round(vit * 100)} % en Vitalite (${vitWhy()}), le reste en ${main} (element principal du deck)`);
-  for (const [stat, want] of [['Vitalité', Math.floor(total * vit)], [main, Infinity]]) { // Vitalite d'abord : 1 pt fixe, la stat principale a des paliers
+  const vit = vitShareNow(), wis = wisdomShareNow();
+  const body = await page.locator('main').innerText();
+  if (!S.learn?.wisTip) { // effet exact de la sagesse : info-bulle du jeu, lue une fois
+    const el = page.getByText('SAGESSE', { exact: true }).first();
+    await el.hover().catch(() => {}); await sleep(600);
+    const tip = (await el.evaluate((e) => e.closest('[title]')?.title || '').catch(() => '')) || ((await page.locator('body').innerText()).split('\n').find((l) => /exp.rience|XP/i.test(l) && /sagesse/i.test(l)) ?? '');
+    if (tip) { (S.learn ??= {}).wisTip = tip; log(`SAGESSE effet : ${tip.slice(0, 200)}`); }
+  }
+  const wisCost = +(body.match(/\nSagesse\n[^\n]+\n(\d+) pt/)?.[1] ?? 3);
+  const L = (S.learn ??= {});
+  L.wisDebt = (L.wisDebt ?? 0) + total * wis; // fractions reportees : 5 pts/niveau ne font pas toujours 1 sagesse
+  const wantWis = Math.floor(L.wisDebt / wisCost);
+  decide(`Caracs : ${total} points, ${Math.round(vit * 100)} % en Vitalite (${vitWhy()}), ${Math.round(wis * 100)} % en Sagesse (XP, ${wisCost} pt/point), le reste en ${main}`);
+  for (const [stat, want] of [['Vitalité', Math.floor(total * vit)], ['Sagesse', wantWis], [main, Infinity]]) { // Vitalite d'abord : 1 pt fixe, la stat principale a des paliers
     if (!(await pts())) break; // les paliers de cout peuvent tout consommer sur la stat principale
     const input = page.getByLabel(`Points à ajouter en ${stat}`);
     const max = +((await input.locator('xpath=following::button[starts-with(normalize-space(), "max")][1]').innerText()).match(/\d+/)?.[0] ?? 0);
@@ -428,6 +450,7 @@ async function allocateStats(page) {
     await input.locator('xpath=following::button[normalize-space()="Ajouter"][1]').click();
     await sleep(1500);
     log(`CARAC +${n} ${stat}`);
+    if (stat === 'Sagesse') L.wisDebt = Math.max(0, L.wisDebt - n * wisCost);
   }
 }
 
@@ -942,6 +965,8 @@ if (process.argv[2] === 'test') {
   { const saved = [S.learn, S.zone]; S.zone = '/chasse?zone=1'; S.learn = { res: { '/chasse?zone=1': { Air: -17, Feu: 50 } } };
     const st0 = { ...NO_STATS, dmg: {} };
     assert.ok(cardValue(parseCard('3 X 20 à 22 dommages Air'), st0) > 2 * cardValue(parseCard('3 Y 20 à 22 dommages Feu'), st0)); [S.learn, S.zone] = saved; }
+  { const saved = [S.learn, S.level]; S.level = 120; S.learn = { build: { minHp: 0.9, loss: 0, n: 20 } }; assert.ok(wisdomShareNow() > CFG.wisShare);
+    S.learn = { build: { minHp: 0.3, loss: 0.2, n: 20 } }; assert.equal(wisdomShareNow(), 0); S.level = 200; S.learn = {}; assert.equal(wisdomShareNow(), 0); [S.learn, S.level] = saved; }
   const it = { fav: false, rarity: 'COMMUN', name: 'Coiffe Bouftou', partial: false };
   assert.deepEqual([canSell(it), canSell({ ...it, rarity: 'RARE' }), canSell({ ...it, name: 'Coiffe Bouftou · Tiers 2' }), canSell({ ...it, name: 'Gelano' }), canSell({ ...it, partial: true }), canSell({ ...it, fav: true })], [true, false, false, false, false, false]);
   setEnergy(0, 200); S.energyAt -= 2.5 * REGEN; assert.equal(energyNow(), 2);

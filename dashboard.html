@@ -541,6 +541,7 @@ const CFG_META = {
   breakJunk: ['Briser au lieu de vendre', '1 = objets inutiles brises en orbes de forge, vendus seulement si les kamas manquent pour l\'energie', 0, 1, 1],
   hardEvery: ['XP hard automatique', 'relance la recherche de limite tous les N niveaux, 0 = jamais', 0, 200, 1],
   stuckSec: ['Page figee apres', 'secondes sans changement avant F5 / deblocage', 5, 120, 1],
+  wisShare: ['Part de Sagesse', 'des points de caracs (XP), ajustee au danger, 0 au niveau 200', 0, 1, 0.05],
   manualFight: ['Combat manuel', '1 = le moteur du bot joue les cartes, 0 = mode Auto du jeu', 0, 1, 1],
   energyResume: ['Energie de reprise', 'apres la reserve, la chasse reprend a ce niveau (1 point / 6 min)', 1, 1000, 1],
 };
@@ -729,7 +730,7 @@ function render(d) {
   const av = Object.entries(L.arenaAvoid ?? {});
   $('m-avoid').innerHTML = av.length ? av.map(([k, v]) => `<div><b>${esc(k)}</b> : evite depuis le niv ${v.lvl}, retente au niv ${v.lvl + 3} ou avec un autre deck</div>`).join('') : 'aucun';
   const B = L.build;
-  $('m-build').textContent = B?.n ? `PV mini moyens ${pct(B.minHp)}, defaites ${pct(B.loss)} sur ${B.n} combats` : 'en cours d\'apprentissage';
+  $('m-build').textContent = B?.n ? `PV mini moyens ${pct(B.minHp)}, defaites ${pct(B.loss)} sur ${B.n} combats${L.wisTip ? ' ; sagesse : ' + L.wisTip.slice(0, 60) : ''}` : 'en cours d\'apprentissage';
   const zs = Object.entries(L.zones ?? {}).filter(([, z]) => z.n >= 3).sort((a, z) => z[1].xpm - a[1].xpm).slice(0, 3);
   $('m-zones').textContent = zs.length ? zs.map(([k, z]) => `${k.split('=')[1]}: ${fmt(z.xpm)} (${pct(z.win)})`).join(' · ') : 'en cours de mesure';
   const pk = Object.entries(prof).sort((a, z) => z[1].r / z[1].n - a[1].r / a[1].n);
