@@ -1301,7 +1301,9 @@ async function planSpots(page) {
   const z = await allZones(page);
   const reach = S.level + Math.max(5, S.learn?.hard?.offset ?? 10); // jusqu'a la limite apprise par XP hard
   const cand = z.filter(([, mx, , mn]) => mn <= reach && mx >= S.level - 10).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  spotQueue = cand.map(([hr]) => hr); spotFights = 0;
+  const fresh = (hr) => { const s = S.learn?.zones?.[hr]; return s && s.n >= SPOT_FIGHTS && Math.abs(s.lvl - S.level) <= 5; }; // deja mesuree a ce niveau
+  spotQueue = cand.map(([hr]) => hr).filter((hr) => !fresh(hr)); spotFights = 0;
+  if (!spotQueue.length) { decide('Spots XP : toutes les zones candidates sont deja mesurees a mon niveau, je choisis directement'); pickSpot(); return false; }
   decide(`Spots XP : ${cand.length} zones a mesurer (${SPOT_FIGHTS} combats chacune) : ${cand.map(([, mx, nm, mn]) => `${nm} ${mn}-${mx}`).join(', ')}`);
   log(`SPOTS mesure de ${cand.length} zones`);
   return false;
