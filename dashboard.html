@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DofusMasters Bot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0b0d0c; --s1: #111413; --s2: #161a18; --s3: #1d2220; --s4: #262c29;
+  --line-1: #222825; --line-2: #2e3632;
+  --t1: #eceff0; --t2: #a3aca7; --t3: #6f7973;
+  --accent: #a3e35f; --accent-ink: #132008; --accent-soft: rgba(163, 227, 95, .11);
+  --warn: #f0c35a; --warn-soft: rgba(240, 195, 90, .12);
+  --danger: #f26d6d; --danger-soft: rgba(242, 109, 109, .13);
+  --info: #6fb6f0; --info-soft: rgba(111, 182, 240, .12);
+  --violet: #c4a6f5; --violet-soft: rgba(196, 166, 245, .12);
+  --teal: #7ed7c4; --teal-soft: rgba(126, 215, 196, .12);
+  --el-terre: #c69a5a; --el-feu: #f07d4a; --el-eau: #5eb3ec; --el-air: #7ed69a; --el-neutre: #a7afa9;
+  --r-xl: 16px; --r-lg: 12px; --r-md: 9px; --r-sm: 6px;
+  --font: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  --header-h: 60px;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { color-scheme: dark; }
+body { margin: 0; background: var(--bg); color: var(--t1); font: 13.5px/1.5 var(--font); -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01"; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.num { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+button { font: inherit; color: inherit; }
+.muted { color: var(--t3); }
+.c-ok { color: var(--accent); } .c-bad { color: var(--danger); } .c-warn { color: var(--warn); }
+
+/* ===== En-tete ===== */
+.top { position: sticky; top: 0; z-index: 20; height: var(--header-h); display: flex; align-items: center; gap: 18px; padding: 0 24px; background: rgba(11, 13, 12, .82); backdrop-filter: saturate(140%) blur(12px); border-bottom: 1px solid var(--line-1); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.1px; white-space: nowrap; }
+.mark { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: linear-gradient(145deg, rgba(163, 227, 95, .22), rgba(163, 227, 95, .06)); color: var(--accent); box-shadow: inset 0 0 0 1px rgba(163, 227, 95, .25); }
+.sep { width: 1px; height: 22px; background: var(--line-2); }
+.char { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; min-width: 0; }
+.char b { font-weight: 600; }
+.char .lvl { color: var(--t2); }
+.char .kamas { color: var(--warn); font-weight: 600; }
+.pill { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px; border-radius: 99px; font-size: 12px; font-weight: 600; white-space: nowrap; background: var(--s3); color: var(--t2); }
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.combat { color: var(--accent); background: var(--accent-soft); }
+.pill.combat .dot { animation: pulse 1.8s ease-in-out infinite; }
+.pill.gestion { color: var(--info); background: var(--info-soft); }
+.pill.pause, .pill.rate-limit, .pill.demarrage, .pill.throttle { color: var(--warn); background: var(--warn-soft); }
+.pill.presence, .pill.offline { color: #fff; background: var(--danger); }
+@keyframes pulse { 50% { opacity: .3; } }
+.grow { flex: 1; }
+.netchip { display: inline-flex; align-items: center; gap: 10px; height: 32px; padding: 0 12px; border-radius: var(--r-md); background: var(--s2); border: 1px solid var(--line-1); white-space: nowrap; cursor: pointer; }
+.netchip:hover { border-color: var(--line-2); }
+.netchip .lbl { color: var(--t3); font-size: 12px; }
+.netchip .val { font-weight: 600; }
+.meter { width: 64px; height: 5px; border-radius: 99px; background: var(--s4); overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--accent); transition: width .4s, background .4s; }
+.uptime { color: var(--t3); font-size: 12px; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: var(--r-md); border: 1px solid var(--line-2); background: var(--s2); font-weight: 600; font-size: 13px; cursor: pointer; transition: background .15s, border-color .15s; white-space: nowrap; }
+.btn:hover { background: var(--s3); border-color: var(--t3); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.btn.primary:hover { filter: brightness(1.06); background: var(--accent); }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--t2); }
+.btn.ghost:hover { background: var(--s2); color: var(--t1); }
+
+/* ===== Alerte presence ===== */
+.alert { display: none; align-items: center; gap: 14px; margin: 16px 24px 0; padding: 14px 18px; border-radius: var(--r-lg); background: var(--danger-soft); border: 1px solid rgba(242, 109, 109, .55); }
+.alert.on { display: flex; animation: glow 1.4s ease-in-out infinite; }
+.alert svg.i { width: 22px; height: 22px; color: var(--danger); }
+.alert b { font-size: 14.5px; }
+.alert span { color: var(--t2); }
+@keyframes glow { 50% { box-shadow: 0 0 0 4px rgba(242, 109, 109, .16); } }
+
+/* ===== Mise en page ===== */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; padding: 20px 24px 40px; max-width: 1760px; margin: 0 auto; align-items: start; }
+.col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.side { position: sticky; top: calc(var(--header-h) + 20px); max-height: calc(100vh - var(--header-h) - 40px); overflow-y: auto; scrollbar-width: none; }
+.card { background: var(--s1); border: 1px solid var(--line-1); border-radius: var(--r-xl); min-width: 0; }
+.card-h { display: flex; align-items: center; gap: 9px; margin: 0; padding: 14px 18px; border-bottom: 1px solid var(--line-1); font-size: 13px; font-weight: 600; }
+.card-h svg.i { color: var(--t3); }
+.card-h .aside { margin-left: auto; color: var(--t3); font-weight: 400; font-size: 12px; display: flex; align-items: center; gap: 10px; }
+.card-b { padding: 16px 18px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+
+/* ===== Vue d'ensemble ===== */
+.overview { display: grid; grid-template-columns: 1.25fr 1fr 1fr 1fr; }
+.ov { padding: 18px 20px; min-width: 0; }
+.ov + .ov { border-left: 1px solid var(--line-1); }
+.ov .l { display: flex; align-items: center; gap: 7px; color: var(--t2); font-size: 12px; }
+.ov .l svg.i { width: 14px; height: 14px; color: var(--t3); }
+.ov .v { font-size: 30px; font-weight: 700; letter-spacing: -.8px; line-height: 1.15; margin-top: 8px; }
+.ov .s { color: var(--t3); font-size: 12px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov .spark { display: block; width: 100%; height: 28px; margin-top: 8px; }
+
+/* ===== Vue live ===== */
+.shot { position: relative; aspect-ratio: 16 / 9; background: #050605; border-radius: 0 0 var(--r-xl) var(--r-xl); overflow: hidden; }
+.shot img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.shot img:not([src]) { visibility: hidden; }
+.shot .wait { position: absolute; inset: 0; display: grid; place-items: center; color: var(--t3); }
+.shot .stale { position: absolute; right: 12px; bottom: 12px; }
+
+/* ===== Graphique ===== */
+#chart { width: 100%; height: 220px; display: block; }
+.legend { display: flex; gap: 14px; }
+.legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+
+/* ===== Lignes cle/valeur ===== */
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 9px 14px; margin: 0; align-items: baseline; }
+.kv dt { color: var(--t2); }
+.kv dd { margin: 0; text-align: right; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bossname { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
+.bar { height: 5px; border-radius: 99px; background: var(--s4); overflow: hidden; margin-top: 12px; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .6s; }
+
+/* ===== Deck ===== */
+.elems { display: flex; height: 6px; border-radius: 99px; overflow: hidden; background: var(--s4); }
+.elems i { display: block; height: 100%; }
+.elegend { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 14px; color: var(--t2); font-size: 12px; }
+.edot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+.cards { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.cardx { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: var(--r-md); background: var(--s2); min-width: 0; }
+.cost { flex: none; width: 21px; height: 21px; border-radius: 6px; display: grid; place-items: center; background: var(--info-soft); color: var(--info); font-size: 11.5px; font-weight: 700; }
+.cardx .n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.cardx .m { color: var(--t3); font-size: 12px; white-space: nowrap; }
+
+/* ===== Reseau ===== */
+.netgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
+.netgrid .k { color: var(--t2); font-size: 12px; }
+.netgrid .v { font-size: 18px; font-weight: 700; }
+#n-hist { width: 100%; height: 56px; display: block; margin-top: 14px; }
+
+/* ===== Colonne laterale ===== */
+.decisions { flex: none; display: flex; flex-direction: column; }
+.decisions .list { overflow: auto; height: 44vh; min-height: 300px; padding: 6px 0; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+.dec { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 10px; padding: 8px 18px; border-left: 2px solid transparent; }
+.dec:first-child { border-left-color: var(--accent); background: linear-gradient(90deg, var(--accent-soft), transparent 70%); }
+.dec .t { color: var(--t3); font-size: 12px; padding-top: 1px; }
+.dec .x { min-width: 0; overflow-wrap: anywhere; }
+.live { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 11.5px; font-weight: 600; }
+.live .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1.6s infinite; }
+.actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.act { text-align: left; cursor: pointer; display: grid; grid-template-columns: auto 1fr; column-gap: 9px; align-items: center; padding: 8px 10px; border-radius: var(--r-md); border: 1px solid transparent; background: var(--s2); transition: background .15s, border-color .15s; min-width: 0; }
+.act:hover { background: var(--s3); border-color: var(--line-2); }
+.act:active { transform: translateY(1px); }
+.act svg.i { grid-row: span 2; color: var(--t2); }
+.act b { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.act small { color: var(--t3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.act.main { grid-column: span 2; background: var(--accent-soft); }
+.act.main svg.i { color: var(--accent); }
+.act.queued { border-color: rgba(111, 182, 240, .5); background: var(--info-soft); }
+.act.queued small { color: var(--info); }
+.hint { color: var(--t3); font-size: 11.5px; margin-top: 10px; }
+
+/* ===== Historique (onglets) ===== */
+.tabs { display: inline-flex; gap: 2px; padding: 3px; background: var(--s2); border-radius: var(--r-md); }
+.tabs button { border: 0; background: transparent; color: var(--t2); font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; }
+.tabs button[aria-selected="true"], .tabs button[aria-pressed="true"] { background: var(--s4); color: var(--t1); }
+.scroll { max-height: 420px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+.feed-row { display: grid; grid-template-columns: 46px 84px minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 8px 18px; border-bottom: 1px solid var(--line-1); }
+.feed-row:last-child { border-bottom: 0; }
+.feed-row .x { min-width: 0; overflow-wrap: anywhere; }
+.t { color: var(--t3); }
+.tag { justify-self: start; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 5px; letter-spacing: .3px; background: var(--s3); color: var(--t2); }
+.tg-EQUIPE { color: var(--accent); background: var(--accent-soft); }
+.tg-VENDU, .tg-AVENTURE { color: var(--warn); background: var(--warn-soft); }
+.tg-COFFRE, .tg-COFFRES, .tg-HDV, .tg-ACTION { color: var(--info); background: var(--info-soft); }
+.tg-DECK, .tg-ARENE { color: var(--violet); background: var(--violet-soft); }
+.tg-CARAC, .tg-FUSION { color: var(--teal); background: var(--teal-soft); }
+.tg-BOSS, .tg-TROP { color: var(--danger); background: var(--danger-soft); }
+.log { font: 12px/1.65 var(--mono); padding: 12px 18px; }
+.log div { white-space: pre-wrap; overflow-wrap: anywhere; }
+.empty { color: var(--t3); padding: 18px; }
+
+/* ===== Reglages ===== */
+details.card > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 9px; padding: 14px 18px; font-weight: 600; }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary svg.i { color: var(--t3); }
+details.card > summary .chev { margin-left: auto; transition: transform .2s; }
+details[open].card > summary { border-bottom: 1px solid var(--line-1); }
+details[open].card > summary .chev { transform: rotate(180deg); }
+.cfg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 18px; padding: 16px 18px; }
+.cfg label { display: grid; gap: 6px; font-size: 12px; color: var(--t2); align-content: start; }
+.cfg small { color: var(--t3); font-size: 11px; }
+.cfg input { font: inherit; color: var(--t1); background: var(--s2); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 8px 10px; width: 100%; height: 36px; }
+.cfg input:focus { border-color: var(--accent); outline: none; }
+.cfg-actions { display: flex; align-items: center; gap: 12px; padding: 0 18px 16px; }
+
+/* ===== Responsive ===== */
+@media (max-width: 1360px) { .grid3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: 1fr; }
+  .side { position: static; max-height: none; overflow: visible; }
+  .decisions .list { max-height: 360px; }
+  .overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ov:nth-child(3) { border-left: 0; }
+  .ov:nth-child(n+3) { border-top: 1px solid var(--line-1); }
+  .uptime, .sep.hide-md { display: none; }
+}
+@media (max-width: 720px) {
+  .top { height: auto; flex-wrap: wrap; padding: 10px 16px; gap: 10px; }
+  .layout { padding: 16px; gap: 16px; }
+  .alert { margin: 12px 16px 0; }
+  .grid3, .cfg { grid-template-columns: 1fr; }
+  .netchip .meter { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-activity" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+  <symbol id="i-coins" viewBox="0 0 24 24"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></symbol>
+  <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></symbol>
+  <symbol id="i-crown" viewBox="0 0 24 24"><path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z"/><path d="M5 21h14"/></symbol>
+  <symbol id="i-package" viewBox="0 0 24 24"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
+  <symbol id="i-scroll" viewBox="0 0 24 24"><path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-sound" viewBox="0 0 24 24"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/></symbol>
+  <symbol id="i-swords" viewBox="0 0 24 24"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" x2="9" y1="14" y2="18"/><line x1="7" x2="4" y1="17" y2="20"/><line x1="3" x2="5" y1="19" y2="21"/></symbol>
+  <symbol id="i-store" viewBox="0 0 24 24"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></symbol>
+  <symbol id="i-brain" viewBox="0 0 24 24"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="brand"><span class="mark"><svg class="i"><use href="#i-activity"/></svg></span>DofusMasters Bot</div>
+  <span class="sep"></span>
+  <div class="char" id="who"><span class="muted">connexion...</span></div>
+  <span class="pill" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="statusTxt">...</span></span>
+  <div class="grow"></div>
+  <button class="netchip" id="netchip" type="button" title="Requetes envoyees au serveur du jeu la derniere minute (hors images et scripts). Clic : detail.">
+    <svg class="i" style="color:var(--t3)"><use href="#i-wifi"/></svg>
+    <span class="val num" id="h-rate">-</span><span class="lbl num" id="h-cap"></span>
+    <span class="meter"><i id="h-gauge"></i></span>
+  </button>
+  <span class="uptime num" id="uptime"></span>
+  <span class="sep hide-md"></span>
+  <button class="btn ghost" id="sound" type="button" title="Le navigateur bloque le son tant qu'on n'a pas clique une fois sur la page" hidden><svg class="i"><use href="#i-sound"/></svg>Activer le bip</button>
+  <button class="btn" id="pause" type="button"><svg class="i"><use href="#i-pause"/></svg><span>Pause</span></button>
+</header>
+
+<div class="alert" id="alert" role="alert">
+  <svg class="i"><use href="#i-alert"/></svg>
+  <div><b>Test de presence en attente.</b> <span>Clique sur le chiffre demande dans la fenetre Chromium du bot, elle vient de passer au premier plan.</span></div>
+</div>
+
+<div class="layout">
+  <main class="col">
+    <section class="card overview" aria-label="Vue d'ensemble">
+      <div class="ov"><div class="l"><svg class="i"><use href="#i-zap"/></svg>XP, 60 dernieres minutes</div><div class="v num c-ok" id="k-xph">-</div><svg class="spark" id="spark" viewBox="0 0 240 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+      <div class="ov"><div class="l"><svg class="i"><use href="#i-trophy"/></svg>Taux de victoire</div><div class="v num" id="k-win">-</div><div class="s num" id="k-winS"></div></div>
+      <div class="ov"><div class="l"><svg class="i"><use href="#i-crown"/></svg>Boss de zone</div><div class="v num" id="k-boss">-</div><div class="s" id="k-bossS"></div></div>
+      <div class="ov"><div class="l"><svg class="i"><use href="#i-swords"/></svg>Arene</div><div class="v num" id="k-elo" style="color:var(--violet)">-</div><div class="s" id="k-eloS"></div></div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-h"><svg class="i"><use href="#i-monitor"/></svg>Fenetre du bot<span class="aside num" id="shotT"></span></h2>
+      <div class="shot"><span class="wait" id="shotWait">Capture en attente...</span><img id="shot" alt="Capture en direct de la fenetre du bot"><span class="pill stale" id="shotStale" hidden>image figee</span></div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-h"><svg class="i"><use href="#i-chart"/></svg>24 dernieres heures
+        <span class="aside legend"><span><i style="background:var(--accent)"></i>XP</span><span><i style="background:var(--warn)"></i>Kamas</span><span><i style="background:var(--danger)"></i>Defaites</span></span></h2>
+      <div class="card-b"><svg id="chart" viewBox="0 0 960 220" preserveAspectRatio="none" role="img" aria-label="XP, kamas et combats par heure sur 24 heures"></svg></div>
+    </section>
+
+    <div class="grid3">
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-pin"/></svg>Activite</h2>
+        <div class="card-b"><dl class="kv">
+          <dt>Mode</dt><dd id="a-mode">-</dd>
+          <dt>Avant l'aventure</dt><dd id="a-hunt">-</dd>
+          <dt>Zone de chasse</dt><dd id="a-zone">-</dd>
+          <dt>Palier de defaites</dt><dd id="a-strikes">-</dd>
+          <dt>Tests de presence</dt><dd id="a-pres" class="num">-</dd>
+        </dl></div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-crown"/></svg>Prochain boss<span class="aside" id="b-tier"></span></h2>
+        <div class="card-b">
+          <div class="bossname" id="b-name">en attente de verification</div>
+          <div class="muted num" id="b-info"></div>
+          <div class="bar" role="progressbar" aria-label="Approche du boss" aria-valuemin="0" aria-valuemax="100" id="b-barWrap"><i id="b-bar"></i></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-swords"/></svg>Arene<span class="aside" id="ar-at"></span></h2>
+        <div class="card-b"><dl class="kv">
+          <dt>Elo</dt><dd id="ar-elo" class="num">-</dd>
+          <dt>Niveau d'opti</dt><dd id="ar-opti" class="num">-</dd>
+          <dt>Classement</dt><dd id="ar-rank" class="num">-</dd>
+          <dt>V / D (jeu, bot)</dt><dd class="num"><span id="ar-wl">-</span> · <span id="ar-bot">-</span></dd>
+          <dt>Dernier combat</dt><dd id="ar-last">-</dd>
+        </dl></div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-coins"/></svg>Economie</h2>
+        <div class="card-b"><dl class="kv">
+          <dt>Gains en combat</dt><dd id="e-fight" class="num">-</dd>
+          <dt>Ventes marchand</dt><dd id="e-sold" class="num">-</dd>
+          <dt>Achats HDV</dt><dd id="e-hdv" class="num">-</dd>
+          <dt>Coffres ouverts / achetes</dt><dd id="e-chests" class="num">-</dd>
+          <dt>Equipes · fusions</dt><dd class="num"><span id="e-equips">-</span> · <span id="e-fusions">-</span></dd>
+        </dl></div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-layers"/></svg>Deck en combat<span class="aside" id="d-main"></span></h2>
+        <div class="card-b">
+          <div class="elems" id="elems"></div>
+          <div class="elegend" id="elemLegend"></div>
+          <div class="cards" id="cards"><div class="empty" style="padding:0">Calcule au prochain passage de gestion.</div></div>
+        </div>
+      </section>
+
+      <section class="card" id="netcard">
+        <h2 class="card-h"><svg class="i"><use href="#i-wifi"/></svg>Reseau vers le serveur<span class="aside">derniere minute</span></h2>
+        <div class="card-b">
+          <div class="netgrid">
+            <div><div class="k">Pages</div><div class="v num" id="n-page">-</div></div>
+            <div><div class="k">Actions</div><div class="v num" id="n-action">-</div></div>
+            <div><div class="k">Donnees</div><div class="v num" id="n-donnee">-</div></div>
+            <div><div class="k">Images, scripts</div><div class="v num" id="n-asset" style="color:var(--t2)">-</div></div>
+            <div><div class="k">Total session</div><div class="v num" id="n-total">-</div></div>
+            <div><div class="k">429 · ralentis</div><div class="v num" id="n-429">-</div></div>
+          </div>
+          <svg id="n-hist" viewBox="0 0 300 56" preserveAspectRatio="none" aria-label="Requetes par minute sur 30 minutes"></svg>
+          <div class="hint"><span id="n-blocked"></span> Barre = 1 minute, pointilles = plafond.</div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2 class="card-h"><svg class="i"><use href="#i-scroll"/></svg>Historique
+        <span class="aside">
+          <span class="tabs" role="tablist" id="histTabs"><button type="button" role="tab" data-tab="feed" aria-selected="true">Butin et gestion</button><button type="button" role="tab" data-tab="log" aria-selected="false">Journal</button></span>
+          <span class="tabs" id="filters" role="group" aria-label="Filtrer le journal" hidden></span>
+        </span></h2>
+      <div class="scroll" id="feed"></div>
+      <div class="scroll log" id="log" tabindex="0" aria-label="Journal du bot" hidden></div>
+    </section>
+
+    <details class="card" id="cfgBox">
+      <summary><svg class="i"><use href="#i-sliders"/></svg>Reglages<span class="muted" id="cfgMsg" style="font-weight:400"></span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+      <div class="cfg" id="cfg"></div>
+      <div class="cfg-actions"><button class="btn primary" id="save" type="button">Enregistrer</button><span class="muted">Pris en compte tout de suite, sans redemarrage.</span></div>
+    </details>
+  </main>
+
+  <aside class="col side">
+    <section class="card decisions">
+      <h2 class="card-h"><svg class="i"><use href="#i-brain"/></svg>Decisions<span class="aside"><span class="live"><span class="dot"></span>en direct</span></span></h2>
+      <div class="list" id="decisions"></div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-h"><svg class="i"><use href="#i-sparkles"/></svg>Actions<span class="aside" id="queueTxt"></span></h2>
+      <div class="card-b">
+        <div class="actions" id="actions"></div>
+        <div class="hint">Executees a la fin du combat en cours. Recharger et Pause sont immediats.</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-h"><svg class="i"><use href="#i-clock"/></svg>Planning</h2>
+      <div class="card-b"><dl class="kv">
+        <dt>Passe de gestion</dt><dd id="p-pass" class="num">-</dd>
+        <dt>Arene</dt><dd id="p-arena" class="num">-</dd>
+        <dt>Boss</dt><dd id="p-boss" class="num">-</dd>
+        <dt>Energie</dt><dd id="p-energy" class="num">-</dd>
+        <dt>Emplacements vides</dt><dd id="p-empty">-</dd>
+        <dt>Combats (session)</dt><dd id="p-combats" class="num">-</dd>
+      </dl></div>
+    </section>
+  </aside>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = (n) => Math.round(n).toLocaleString('fr-FR');
+const short = (n) => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.', ',') + ' M' : n >= 1e4 ? Math.round(n / 1e3) + ' k' : fmt(n);
+const hm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+const hms = (t) => new Date(t).toLocaleTimeString('fr-FR');
+const dur = (ms) => { const s = Math.max(0, Math.round(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h} h ${String(m).padStart(2, '0')}` : m ? `${m} min ${String(s % 60).padStart(2, '0')} s` : `${s} s`; };
+const icon = (id) => `<svg class="i"><use href="#i-${id}"/></svg>`;
+const ELEM = { Terre: 'var(--el-terre)', Feu: 'var(--el-feu)', Eau: 'var(--el-eau)', Air: 'var(--el-air)', Neutre: 'var(--el-neutre)' };
+const STATUS = { combat: 'En combat', gestion: 'Gestion', pause: 'En pause', throttle: 'Ralenti (limiteur)', presence: 'Presence requise', 'rate-limit': 'Serveur sature', demarrage: 'Demarrage', offline: 'Bot hors ligne' };
+const MODE = { aventure: 'Aventure (Chemin)', chasse: 'Chasse', boss: 'Boss de zone', arene: 'Arene' };
+const CFG_META = {
+  vitShare: ['Part en Vitalite', 'de 0 a 1, le reste dans l\'element du deck', 0, 1, 0.05],
+  kamasReserve: ['Reserve de kamas', 'jamais depensee (coffres, HDV)', 0, 1e9, 1000],
+  huntWins: ['Victoires de rattrapage', 'en chasse avant de retenter l\'aventure', 1, 500, 1],
+  defeatThreshold: ['Seuil de defaites', 'sur les 10 derniers combats de chasse', 1, 10, 1],
+  maxGroup: ['Difficulte max', '0 facile, 1 moyen, 2 difficile, 3 tres difficile', 0, 3, 1],
+  passEvery: ['Passe de gestion', 'tous les N combats', 5, 500, 1],
+  arenaEvery: ['Arene toutes les', 'minutes, 0 = coupee', 0, 240, 1],
+  arenaMinEnergy: ['Energie mini arene', 'garde le reste pour la chasse', 0, 1000, 5],
+  maxReqPerMin: ['Plafond requetes/min', 'pages, actions, donnees ; au-dela le bot attend', 10, 600, 5],
+  blockImages: ['Bloquer les images', '1 oui (moins de charge serveur), 0 non', 0, 1, 1],
+  ringSpare: ['Anneaux en reserve', 'les meilleurs du sac gardes, le reste vendu', 0, 20, 1],
+  spareWindow: ['Fenetre de niveau reserve', 'reserve = anneaux de niveau >= mon niveau - N', 0, 100, 1],
+};
+const ACTS = {
+  gestion: ['Passe complete', 'sparkles', 'coffres, deck, stuff, HDV, caracs'],
+  coffres: ['Coffres', 'package', 'ouvrir et acheter'],
+  deck: ['Deck', 'layers', 'reoptimiser'],
+  inventaire: ['Inventaire', 'shield', 'equiper, fusionner, vendre'],
+  hdv: ['HDV', 'store', 'emplacements vides'],
+  carac: ['Caracs', 'user', 'repartir les points'],
+  arene: ['Arene', 'swords', 'defier le plus faible'],
+  boss: ['Boss', 'crown', 'tenter maintenant'],
+  zone: ['Zone facile', 'map', 'changer de zone'],
+  aventure: ['Aventure', 'flag', 'retenter l\'etape'],
+  f5: ['Recharger', 'refresh', 'F5 sur la page'],
+};
+let state = null, cfgDrawn = false, filter = 'tout', lastBeep = 0, audio = null, shotOk = 0;
+
+/* ---------- statut + alerte ---------- */
+function setStatus(st) {
+  $('status').className = 'pill ' + st;
+  $('statusTxt').textContent = STATUS[st] ?? st;
+  $('alert').classList.toggle('on', st === 'presence');
+  const title = st === 'presence' ? 'PRESENCE REQUISE · DofusMasters Bot' : st === 'offline' ? 'Hors ligne · DofusMasters Bot' : 'DofusMasters Bot';
+  if (document.title !== title) document.title = title;
+  if (st === 'presence') beep();
+}
+function beep() {
+  if (Date.now() - lastBeep < 8000) return;
+  lastBeep = Date.now();
+  try {
+    audio ??= new AudioContext();
+    if (audio.state !== 'running') { $('sound').hidden = false; return; } // son bloque tant qu'on n'a pas clique sur la page
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = 880; g.gain.value = 0.12; o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.35);
+  } catch {}
+}
+$('sound').onclick = async () => { audio ??= new AudioContext(); await audio.resume().catch(() => {}); $('sound').hidden = audio.state === 'running'; };
+
+/* ---------- graphiques ---------- */
+function drawSpark(hours) {
+  const W = 240, H = 28, mx = Math.max(1, ...hours.map((h) => h.xp));
+  const p = hours.map((h, i) => `${(i / (hours.length - 1)) * W},${H - 2 - (h.xp / mx) * (H - 4)}`).join(' ');
+  $('spark').innerHTML = `<polygon points="0,${H} ${p} ${W},${H}" fill="rgba(163,227,95,.13)"/><polyline points="${p}" fill="none" stroke="#a3e35f" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`;
+}
+function drawChart(hours, now) {
+  const W = 960, H = 220, top = 18, plotH = 126, barTop = 158, barH = 40, n = hours.length, bw = W / n;
+  const mx = Math.max(1, ...hours.map((h) => h.xp)), mk = Math.max(1, ...hours.map((h) => h.kamas)), mc = Math.max(1, ...hours.map((h) => h.wins + h.losses));
+  const x = (i) => i * bw + bw / 2, y = (v, m) => top + plotH - (v / m) * plotH;
+  const line = (key, m) => hours.map((h, i) => `${x(i)},${y(h[key], m)}`).join(' ');
+  let s = '';
+  for (const f of [0, 0.5, 1]) s += `<line x1="0" x2="${W}" y1="${top + plotH * f}" y2="${top + plotH * f}" stroke="#222825" ${f === 1 ? '' : 'stroke-dasharray="3 6"'}/>`;
+  s += `<text x="0" y="11" fill="#6f7973" font-size="11">max ${esc(short(mx))} XP · ${esc(short(mk))} kamas par heure</text>`;
+  s += `<polygon points="${x(0)},${top + plotH} ${line('xp', mx)} ${x(n - 1)},${top + plotH}" fill="rgba(163,227,95,.12)"/>`;
+  s += `<polyline points="${line('xp', mx)}" fill="none" stroke="#a3e35f" stroke-width="2.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  s += `<polyline points="${line('kamas', mk)}" fill="none" stroke="#f0c35a" stroke-width="1.6" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
+  hours.forEach((h, i) => {
+    const tot = h.wins + h.losses, hh = (tot / mc) * barH, lh = (h.losses / mc) * barH, bx = i * bw + 3, w = bw - 6, tip = `<title>${h.wins} victoires, ${h.losses} defaites</title>`;
+    s += `<rect x="${bx}" y="${barTop}" width="${w}" height="${barH}" rx="3" fill="#161a18">${tip}</rect>`;
+    if (tot) s += `<rect x="${bx}" y="${barTop + barH - hh}" width="${w}" height="${hh - lh}" rx="3" fill="#a3e35f" opacity=".7">${tip}</rect>`;
+    if (h.losses) s += `<rect x="${bx}" y="${barTop + barH - lh}" width="${w}" height="${lh}" rx="2" fill="#f26d6d">${tip}</rect>`;
+    if (i % 3 === 2 || i === n - 1) s += `<text x="${x(i)}" y="${H - 2}" fill="#6f7973" font-size="11" text-anchor="middle">${i === n - 1 ? 'maint.' : new Date(now - (n - 1 - i) * 3600000).getHours() + 'h'}</text>`;
+  });
+  $('chart').innerHTML = s;
+}
+
+/* ---------- reseau ---------- */
+function renderNet(n, cap) {
+  if (!n) return;
+  const r = n.srvLastMin, pct = Math.min(100, r / cap * 100), col = pct >= 90 ? 'var(--danger)' : pct >= 60 ? 'var(--warn)' : 'var(--accent)';
+  $('h-rate').textContent = r;
+  $('h-cap').textContent = `/ ${cap} req/min`;
+  $('h-gauge').style.width = pct + '%';
+  $('h-gauge').style.background = col;
+  for (const k of ['page', 'action', 'donnee', 'asset']) $('n-' + k).textContent = n.lastMin[k];
+  $('n-total').textContent = fmt(n.total);
+  $('n-429').innerHTML = `<span class="${n.r429 ? 'c-bad' : ''}">${n.r429}</span> · <span class="${n.throttled ? 'c-warn' : ''}">${n.throttled}</span>`;
+  $('n-blocked').textContent = n.blocked ? `${fmt(n.blocked)} images bloquees (jamais envoyees).` : '';
+  const W = 300, H = 56, bw = W / n.perMin.length, mx = Math.max(cap, ...n.perMin.map((m) => m.srv + m.asset));
+  let s = '';
+  n.perMin.forEach((m, i) => {
+    const hs = (m.srv / mx) * (H - 2), ha = (m.asset / mx) * (H - 2);
+    s += `<rect x="${i * bw + 1}" y="${H - hs - ha}" width="${bw - 2}" height="${ha}" fill="#2e3632"><title>${m.asset} images/scripts</title></rect>`;
+    s += `<rect x="${i * bw + 1}" y="${H - hs}" width="${bw - 2}" height="${hs}" fill="${m.srv >= cap ? '#f26d6d' : '#a3e35f'}"><title>${m.srv} requetes serveur</title></rect>`;
+  });
+  const yc = H - (cap / mx) * (H - 2);
+  s += `<line x1="0" x2="${W}" y1="${yc}" y2="${yc}" stroke="#f0c35a" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`;
+  $('n-hist').innerHTML = s;
+}
+$('netchip').onclick = () => $('netcard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+/* ---------- rendu principal ---------- */
+const renderDecisions = { key: '' };
+function render(d) {
+  const { S, stats: st, CFG, now } = d;
+  renderNet(d.net, CFG.maxReqPerMin);
+  setStatus(S.paused ? 'pause' : S.status);
+  $('pause').innerHTML = S.paused ? `${icon('play')}<span>Reprendre</span>` : `${icon('pause')}<span>Pause</span>`;
+  $('who').innerHTML = S.name ? `<b>${esc(S.name)}</b><span class="lvl">niv. ${S.level}</span><span class="kamas num">${fmt(S.kamas)} K</span>` : '<span class="muted">personnage en chargement</span>';
+  $('uptime').textContent = 'en ligne ' + dur(now - S.since);
+
+  // vue d'ensemble
+  const total = st.wins + st.losses, rate = total ? st.wins / total : 0, bossT = st.bossWins + st.bossLosses, ar = S.arena;
+  $('k-xph').textContent = short(st.hours[23].xp);
+  drawSpark(st.hours);
+  $('k-win').textContent = total ? (rate * 100).toFixed(total > 200 ? 1 : 0).replace('.', ',') + ' %' : '-';
+  $('k-win').style.color = !total ? '' : rate >= 0.9 ? 'var(--accent)' : rate >= 0.7 ? 'var(--warn)' : 'var(--danger)';
+  $('k-winS').textContent = `${fmt(st.wins)} victoires, ${fmt(st.losses)} defaites`;
+  $('k-boss').textContent = bossT ? `${st.bossWins} / ${bossT}` : '-';
+  $('k-bossS').textContent = bossT ? 'victoires sur tentatives' : 'aucun essai pour l\'instant';
+  $('k-elo').textContent = ar?.elo || '-';
+  $('k-eloS').textContent = ar ? `rang ${ar.rank}, bot ${st.arenaWins} V / ${st.arenaLosses} D` : 'pas encore visitee';
+
+  // activite
+  $('a-mode').textContent = MODE[S.mode] ?? S.mode;
+  $('a-hunt').textContent = S.huntLeft ? `${S.huntLeft} victoires en chasse` : 'rien, elle continue';
+  $('a-zone').textContent = S.zone ? 'zone ' + S.zone.split('=')[1] : 'celle du jeu';
+  $('a-strikes').innerHTML = S.strikes ? `<span class="c-warn">${S.strikes}, groupes faciles</span>` : '<span class="c-ok">aucun</span>';
+  $('a-pres').textContent = st.presence;
+
+  // boss
+  const b = S.boss;
+  if (b) {
+    $('b-name').textContent = b.name;
+    $('b-tier').textContent = b.tier ? 'niv. ' + b.tier : '';
+    let pct = 0, info;
+    if (b.live) { info = 'combat en cours'; pct = 100; }
+    else if (b.eta && b.eta > now) { info = `arrive dans ${dur(b.eta - now)}, vers ${hm(b.eta)}`; pct = Math.max(0, Math.min(100, 100 - (b.eta - now) / 12000)); }
+    else info = b.last ? `dernier essai : ${b.last}` : 'present ou en approche, verifie au prochain combat';
+    $('b-info').textContent = info;
+    $('b-bar').style.width = pct + '%';
+    $('b-barWrap').setAttribute('aria-valuenow', Math.round(pct));
+  }
+
+  // arene
+  $('ar-elo').textContent = ar?.elo ?? '-';
+  $('ar-opti').textContent = ar?.opti ? fmt(ar.opti) : '-';
+  $('ar-rank').textContent = ar ? '#' + ar.rank : '-';
+  $('ar-wl').textContent = ar?.wl ?? '-';
+  $('ar-bot').textContent = `${st.arenaWins} / ${st.arenaLosses}`;
+  $('ar-last').innerHTML = ar?.last ? `<span class="${ar.last === 'victoire' ? 'c-ok' : 'c-bad'}">${ar.last}</span>` : '-';
+  $('ar-at').textContent = ar?.at ? 'lu a ' + hm(ar.at) : '';
+
+  // economie
+  $('e-fight').textContent = '+' + short(st.kamas) + ' K';
+  $('e-sold').textContent = `${st.sold} · +${short(st.soldK)} K`;
+  $('e-hdv').textContent = `${st.bought} · -${short(st.boughtK)} K`;
+  $('e-chests').textContent = `${st.chests} / ${st.chestsBought}`;
+  $('e-equips').textContent = st.equips;
+  $('e-fusions').textContent = st.fusions;
+
+  // deck
+  const el = Object.entries(S.elem ?? {}).filter(([, v]) => v > 0).sort((a, z) => z[1] - a[1]);
+  $('elems').innerHTML = el.map(([e, v]) => `<i style="width:${v * 100}%;background:${ELEM[e]}"></i>`).join('');
+  $('elemLegend').innerHTML = el.map(([e, v]) => `<span><i class="edot" style="background:${ELEM[e]}"></i>${e} ${Math.round(v * 100)} %</span>`).join('');
+  $('d-main').textContent = el[0] ? el[0][0] : '';
+  if (S.deck?.length) {
+    const deck = [...S.deck].sort((a, z) => (z.value || -1) - (a.value || -1));
+    $('cards').innerHTML = deck.map((c) => `<div class="cardx" title="${esc(c.name)}"><span class="cost">${c.cost}</span><span class="n">${c.elem ? `<i class="edot" style="background:${ELEM[c.elem]}"></i>` : ''}${esc(c.name)}</span><span class="m num">${c.elem ? c.value + ' /PA' : 'utilitaire'}</span></div>`).join('');
+  }
+
+  // decisions (la plus recente en haut, surlignee) ; DOM reecrit seulement si nouvelle decision
+  const dk = (S.decisions?.[0]?.t ?? 0) + ':' + (S.decisions?.[0]?.n ?? 1) + ':' + (S.decisions?.length ?? 0);
+  if (dk !== renderDecisions.key) {
+    renderDecisions.key = dk;
+    $('decisions').innerHTML = (S.decisions ?? []).map((x) => `<div class="dec"><span class="t num">${hms(x.t)}</span><span class="x">${esc(x.m)}${x.n > 1 ? ` <span class="muted num">x${x.n}</span>` : ''}</span></div>`).join('') || '<div class="empty">Les choix du bot apparaissent ici, en direct.</div>';
+  }
+
+  // actions
+  for (const btn of $('actions').children) {
+    const a = btn.dataset.a, q = S.queue?.includes(a);
+    btn.classList.toggle('queued', !!q);
+    btn.querySelector('small').textContent = q ? 'en file, fin du combat' : S.last?.[a] ? 'derniere : ' + hm(S.last[a]) : ACTS[a][2];
+  }
+  $('queueTxt').textContent = S.queue?.length ? `${S.queue.length} en file` : '';
+
+  // planning
+  const left = CFG.passEvery - ((S.combats || 0) % CFG.passEvery);
+  $('p-pass').textContent = `dans ${left} combat${left > 1 ? 's' : ''}`;
+  const nextAr = (S.last?.arene || S.since) + CFG.arenaEvery * 60000;
+  $('p-arena').textContent = !CFG.arenaEvery ? 'coupee' : nextAr <= now ? 'au prochain combat' : `vers ${hm(nextAr)} (${dur(nextAr - now)})`;
+  $('p-boss').textContent = S.boss?.live ? 'combat en cours' : S.boss?.eta > now ? `${S.boss.name}, ${hm(S.boss.eta)}` : 'apres chaque combat';
+  $('p-energy').textContent = S.energy ?? '-';
+  $('p-empty').textContent = S.emptySlots?.length ? S.emptySlots.join(', ') : 'aucun';
+  $('p-combats').textContent = fmt(S.combats || 0);
+
+  // historique
+  $('feed').innerHTML = st.feed.map(([t, m]) => {
+    const tag = m.split(' ')[0];
+    return `<div class="feed-row"><span class="t num">${hm(t)}</span><span class="tag tg-${esc(tag)}">${esc(tag)}</span><span class="x">${esc(m.slice(tag.length + 1))}</span></div>`;
+  }).join('') || '<div class="empty">Rien pour l\'instant.</div>';
+  renderLog(st.tail);
+
+  if (!cfgDrawn) drawCfg(CFG);
+  drawChart(st.hours, now);
+}
+
+/* ---------- historique : onglets + filtres ---------- */
+const FILTERS = { tout: null, combats: /VICTOIRE|DEFAITE/, gestion: /EQUIPE|VENDU|COFFRE|DECK|CARAC|FUSION|HDV|CONFIG/, alertes: /ERREUR|BLOQUE|PRESENCE|429|EXPIREE|TROP|ENERGIE/ };
+$('filters').innerHTML = Object.keys(FILTERS).map((k) => `<button type="button" data-f="${k}" aria-pressed="${k === filter}">${k}</button>`).join('');
+$('filters').onclick = (e) => {
+  const f = e.target.closest('button')?.dataset.f;
+  if (!f) return;
+  filter = f;
+  for (const b of $('filters').children) b.setAttribute('aria-pressed', b.dataset.f === f);
+  if (state) renderLog(state.stats.tail, true);
+};
+$('histTabs').onclick = (e) => {
+  const t = e.target.closest('button')?.dataset.tab;
+  if (!t) return;
+  for (const b of $('histTabs').children) b.setAttribute('aria-selected', b.dataset.tab === t);
+  $('feed').hidden = t !== 'feed';
+  $('log').hidden = t !== 'log';
+  $('filters').hidden = t !== 'log';
+  if (t === 'log' && state) renderLog(state.stats.tail, true);
+};
+let lastLogKey = '';
+function renderLog(lines, force) {
+  const re = FILTERS[filter], shown = lines.filter((l) => !re || re.test(l));
+  const key = filter + shown.length + (shown.at(-1) ?? '');
+  if (!force && key === lastLogKey) return; // ne pas casser une selection si rien n'a change
+  lastLogKey = key;
+  const box = $('log'), atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+  box.innerHTML = shown.map((l) => {
+    const m = l.match(/^(\S+Z) (.*)$/), msg = m ? m[2] : l;
+    const c = /ERREUR|BLOQUE|429|EXPIREE|DEFAITE/.test(msg) ? 'c-bad' : /PRESENCE|TROP|AVENTURE|PAUSE/.test(msg) ? 'c-warn' : /VICTOIRE|EQUIPE/.test(msg) ? 'c-ok' : '';
+    return `<div class="${c}"><span class="t">${m ? hms(m[1]) : ''}</span> ${esc(msg)}</div>`;
+  }).join('') || '<div class="empty">Aucune ligne pour ce filtre.</div>';
+  if (atBottom || force) box.scrollTop = box.scrollHeight;
+}
+
+/* ---------- reglages ---------- */
+function drawCfg(cfg) {
+  $('cfg').innerHTML = Object.entries(CFG_META).map(([k, [l, help, lo, hi, step]]) =>
+    `<label>${l}<input id="cfg-${k}" type="number" inputmode="decimal" min="${lo}" max="${hi}" step="${step}" value="${cfg[k]}"><small>${help}</small></label>`).join('');
+  cfgDrawn = true;
+}
+$('save').onclick = async () => {
+  const body = Object.fromEntries(Object.keys(CFG_META).map((k) => [k, $('cfg-' + k).value]));
+  const r = await fetch('/api/config', { method: 'POST', body: JSON.stringify(body) }).catch(() => null);
+  if (r?.ok) { drawCfg(await r.json()); $('cfgMsg').innerHTML = `<span class="c-ok">enregistre a ${hm(Date.now())}</span>`; }
+  else $('cfgMsg').innerHTML = '<span class="c-bad">echec, bot hors ligne ?</span>';
+};
+
+/* ---------- actions ---------- */
+$('pause').onclick = () => fetch('/api/pause', { method: 'POST' }).catch(() => {});
+$('actions').innerHTML = Object.entries(ACTS).map(([a, [l, ic, d]]) =>
+  `<button type="button" class="act${a === 'gestion' ? ' main' : ''}" data-a="${a}">${icon(ic)}<b>${l}</b><small>${d}</small></button>`).join('');
+$('actions').onclick = async (e) => {
+  const b = e.target.closest('.act');
+  if (!b) return;
+  b.classList.add('queued');
+  await fetch('/api/action/' + b.dataset.a, { method: 'POST' }).catch(() => {});
+};
+
+/* ---------- vue live ---------- */
+function refreshShot() {
+  if (document.hidden) return;
+  const img = new Image();
+  img.onload = () => { $('shot').src = img.src; $('shotWait').hidden = true; shotOk = Date.now(); $('shotT').textContent = 'mise a jour ' + hms(shotOk); $('shotStale').hidden = true; };
+  img.onerror = () => { if (shotOk && Date.now() - shotOk > 15000) $('shotStale').hidden = false; };
+  img.src = '/api/shot?' + Date.now();
+}
+
+/* ---------- temps reel (SSE) ; recharge si dashboard.html change ---------- */
+let ver = null;
+function connect() {
+  const es = new EventSource('/api/events');
+  es.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    if (ver !== null && d.ver !== ver) return location.reload();
+    ver = d.ver;
+    state = d;
+    render(d);
+  };
+  es.onerror = () => setStatus('offline'); // reconnexion automatique (retry 1 s)
+}
+connect();
+refreshShot();
+setInterval(refreshShot, 1500);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshShot(); });
+</script>
+</body>
+</html>

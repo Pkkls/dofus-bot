@@ -1,0 +1,11 @@
+node_modules/
+# session connectee au jeu (cookies) : ne jamais publier
+profile/
+.env
+# etat et traces locales
+state.json
+bot.log
+config.json
+dump/
+*.png
+ring-detail.txt

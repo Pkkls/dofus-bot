@@ -1,0 +1,16 @@
+{
+  "name": "dofus-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bot autonome pour DofusMasters (fan-site) avec tableau de bord local",
+  "type": "module",
+  "main": "bot.mjs",
+  "scripts": {
+    "start": "node bot.mjs",
+    "test": "node bot.mjs test",
+    "explore": "node explore.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.63.0"
+  }
+}
