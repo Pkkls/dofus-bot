@@ -1349,7 +1349,7 @@ let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le
 const ACTIONS = {
   coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
-  aventure: async (p) => { huntLeft = 0; await p.goto(BASE + '/aventure'); await p.locator('button', { hasText: ADV_FIGHT }).first().click({ timeout: 20000 }); return true; },
+  aventure: async (p) => { huntLeft = 0; S.advBlockedUntil = 0; xpHard = false; S.xpHard = false; return goAdventure(p); }, // l'aventure reste ensuite prioritaire (wantAdventure)
 };
 while (true) {
   try {
