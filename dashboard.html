@@ -8,204 +8,246 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+/* ===== Tokens : une seule source pour toute la page (et les graphiques, via tok()) ===== */
 :root {
-  --bg: #0b0d0c; --s1: #111413; --s2: #161a18; --s3: #1d2220; --s4: #262c29;
-  --line-1: #222825; --line-2: #2e3632;
-  --t1: #eceff0; --t2: #a3aca7; --t3: #6f7973;
-  --accent: #a3e35f; --accent-ink: #132008; --accent-soft: rgba(163, 227, 95, .11);
-  --warn: #f0c35a; --warn-soft: rgba(240, 195, 90, .12);
-  --danger: #f26d6d; --danger-soft: rgba(242, 109, 109, .13);
-  --info: #6fb6f0; --info-soft: rgba(111, 182, 240, .12);
-  --violet: #c4a6f5; --violet-soft: rgba(196, 166, 245, .12);
-  --teal: #7ed7c4; --teal-soft: rgba(126, 215, 196, .12);
-  --el-terre: #c69a5a; --el-feu: #f07d4a; --el-eau: #5eb3ec; --el-air: #7ed69a; --el-neutre: #a7afa9;
-  --r-xl: 16px; --r-lg: 12px; --r-md: 9px; --r-sm: 6px;
+  /* surfaces graphite froides, du fond vers le plus eleve */
+  --surface-page: #0d0f12; --surface-1: #13161a; --surface-2: #181c21; --surface-3: #1f242a; --surface-4: #272d34;
+  --border-subtle: #22272e; --border-strong: #2f363f;
+  /* texte : tous >= 5:1 sur toutes les surfaces (AA) */
+  --text-1: #e7e9ec; --text-2: #a7aeb8; --text-3: #8d95a0;
+  /* un seul accent (action, succes) ; jaune et rouge reserves aux etats */
+  --accent: #8fd46c; --accent-ink: #0e1a07; --accent-soft: rgba(143, 212, 108, .12); --accent-line: rgba(143, 212, 108, .35);
+  --warn: #e9bb54; --warn-soft: rgba(233, 187, 84, .12);
+  --danger: #f07373; --danger-ink: #1a0707; --danger-soft: rgba(240, 115, 115, .12); --danger-line: rgba(240, 115, 115, .45);
+  --info: #73aeea; --info-soft: rgba(115, 174, 234, .12);
+  /* couleurs d'element : donnees seulement (deck, correctifs) */
+  --el-terre: #c69a5a; --el-feu: #ef7f4f; --el-eau: #5fb2ea; --el-air: #7fd49b; --el-neutre: #a9b0aa;
+  /* rythme */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --radius: 10px; --radius-sm: 6px; --radius-pill: 999px;
   --font: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  --fs-xs: 12px; --fs-sm: 13px; --fs-base: 14px; --fs-lg: 16px; --fs-xl: 20px; --fs-kpi: 30px;
   --header-h: 60px;
+  --icon: 16px; --dot: 7px; --swatch-w: 10px; --swatch-h: 3px;
+  --dur-pulse: 1.8s; --dur-glow: 1.4s;
+  --feed-tall: 380px; --feed-short: 300px;
+  --ease-out: cubic-bezier(.2, .7, .2, 1); --dur-fast: 120ms; --dur: 200ms;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html { color-scheme: dark; }
-body { margin: 0; background: var(--bg); color: var(--t1); font: 13.5px/1.5 var(--font); -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01"; }
-svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+body { margin: 0; background: var(--surface-page); color: var(--text-1); font: var(--fs-base)/1.5 var(--font); -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01"; }
+svg.i { width: var(--icon); height: var(--icon); flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .num { font-variant-numeric: tabular-nums; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
 button { font: inherit; color: inherit; }
-.muted { color: var(--t3); }
+.muted { color: var(--text-3); }
 .c-ok { color: var(--accent); } .c-bad { color: var(--danger); } .c-warn { color: var(--warn); }
+.t { color: var(--text-3); }
 
 /* ===== En-tete ===== */
-.top { position: sticky; top: 0; z-index: 20; height: var(--header-h); display: flex; align-items: center; gap: 18px; padding: 0 24px; background: rgba(11, 13, 12, .82); backdrop-filter: saturate(140%) blur(12px); border-bottom: 1px solid var(--line-1); }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.1px; white-space: nowrap; }
-.mark { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: linear-gradient(145deg, rgba(163, 227, 95, .22), rgba(163, 227, 95, .06)); color: var(--accent); box-shadow: inset 0 0 0 1px rgba(163, 227, 95, .25); }
-.sep { width: 1px; height: 22px; background: var(--line-2); }
-.char { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; min-width: 0; }
+.top { position: sticky; top: 0; z-index: 20; height: var(--header-h); display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-6); background: rgba(13, 15, 18, .86); backdrop-filter: saturate(140%) blur(12px); border-bottom: 1px solid var(--border-subtle); }
+.brand { display: flex; align-items: center; gap: var(--space-3); font-weight: 600; font-size: var(--fs-base); letter-spacing: -.1px; white-space: nowrap; }
+.mark { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.sep { width: 1px; height: 22px; background: var(--border-strong); }
+.char { display: flex; align-items: baseline; gap: var(--space-3); white-space: nowrap; min-width: 0; }
 .char b { font-weight: 600; }
-.char .lvl { color: var(--t2); }
-.char .kamas { color: var(--warn); font-weight: 600; }
-.pill { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px; border-radius: 99px; font-size: 12px; font-weight: 600; white-space: nowrap; background: var(--s3); color: var(--t2); }
-.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.char .lvl { color: var(--text-2); }
+.char .kamas { color: var(--text-1); font-weight: 600; font-variant-numeric: tabular-nums; }
+.pill { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px; border-radius: var(--radius-pill); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; background: var(--surface-3); color: var(--text-2); }
+.pill .dot { width: var(--dot); height: var(--dot); border-radius: 50%; background: currentColor; }
 .pill.combat { color: var(--accent); background: var(--accent-soft); }
-.pill.combat .dot { animation: pulse 1.8s ease-in-out infinite; }
+.pill.combat .dot { animation: pulse var(--dur-pulse) ease-in-out infinite; }
 .pill.gestion { color: var(--info); background: var(--info-soft); }
 .pill.pause, .pill.rate-limit, .pill.demarrage, .pill.throttle, .pill.repos, .pill.plafond, .pill.recharge { color: var(--warn); background: var(--warn-soft); }
-.pill.presence, .pill.offline { color: #fff; background: var(--danger); }
+.pill.presence, .pill.offline { color: var(--danger-ink); background: var(--danger); }
 @keyframes pulse { 50% { opacity: .3; } }
 .grow { flex: 1; }
-.netchip { display: inline-flex; align-items: center; gap: 10px; height: 32px; padding: 0 12px; border-radius: var(--r-md); background: var(--s2); border: 1px solid var(--line-1); white-space: nowrap; cursor: pointer; }
-.netchip:hover { border-color: var(--line-2); }
-.netchip .lbl { color: var(--t3); font-size: 12px; }
-.netchip .val { font-weight: 600; }
-.meter { width: 64px; height: 5px; border-radius: 99px; background: var(--s4); overflow: hidden; }
-.meter i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--accent); transition: width .4s, background .4s; }
-.uptime { color: var(--t3); font-size: 12px; white-space: nowrap; }
-.btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: var(--r-md); border: 1px solid var(--line-2); background: var(--s2); font-weight: 600; font-size: 13px; cursor: pointer; transition: background .15s, border-color .15s; white-space: nowrap; }
-.btn:hover { background: var(--s3); border-color: var(--t3); }
+.netchip { display: inline-flex; align-items: center; gap: var(--space-2); height: 32px; padding: 0 var(--space-3); border-radius: var(--radius-sm); background: var(--surface-1); border: 1px solid var(--border-subtle); color: var(--text-3); white-space: nowrap; cursor: pointer; transition: border-color var(--dur-fast); }
+.netchip:hover { border-color: var(--border-strong); }
+.netchip .lbl { color: var(--text-3); font-size: var(--fs-xs); }
+.netchip .val { font-weight: 600; color: var(--text-1); }
+.meter { width: 56px; height: 4px; border-radius: var(--radius-pill); background: var(--surface-4); overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; border-radius: var(--radius-pill); background: var(--accent); transition: width .4s, background .4s; }
+.uptime { color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; gap: var(--space-2); height: 34px; padding: 0 var(--space-3); border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface-1); font-weight: 600; font-size: var(--fs-sm); cursor: pointer; transition: background var(--dur-fast), border-color var(--dur-fast); white-space: nowrap; }
+.btn:hover { background: var(--surface-2); border-color: var(--text-3); }
 .btn:active { transform: translateY(1px); }
+.btn[aria-pressed="true"] { border-color: var(--accent-line); color: var(--accent); background: var(--accent-soft); }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .btn.primary:hover { filter: brightness(1.06); background: var(--accent); }
-.btn.ghost { border-color: transparent; background: transparent; color: var(--t2); }
-.btn.ghost:hover { background: var(--s2); color: var(--t1); }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--text-2); }
+.btn.ghost:hover { background: var(--surface-2); color: var(--text-1); }
 
 /* ===== Alerte presence ===== */
-.alert { display: none; align-items: center; gap: 14px; margin: 16px 24px 0; padding: 14px 18px; border-radius: var(--r-lg); background: var(--danger-soft); border: 1px solid rgba(242, 109, 109, .55); }
-.alert.on { display: flex; animation: glow 1.4s ease-in-out infinite; }
-.alert svg.i { width: 22px; height: 22px; color: var(--danger); }
-.alert b { font-size: 14.5px; }
-.alert span { color: var(--t2); }
-@keyframes glow { 50% { box-shadow: 0 0 0 4px rgba(242, 109, 109, .16); } }
+.alert { display: none; align-items: center; gap: var(--space-3); max-width: 1600px; margin: var(--space-4) auto 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius); background: var(--danger-soft); border: 1px solid var(--danger-line); }
+.alert.on { display: flex; animation: glow var(--dur-glow) ease-in-out infinite; }
+.alert svg.i { width: 20px; height: 20px; color: var(--danger); }
+.alert b { font-size: var(--fs-base); }
+.alert span { color: var(--text-2); }
+@keyframes glow { 50% { box-shadow: 0 0 0 4px var(--danger-soft); } }
 
-/* ===== Mise en page ===== */
-.layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; padding: 20px 24px 40px; max-width: 1760px; margin: 0 auto; align-items: start; }
-.col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
-.side { position: sticky; top: calc(var(--header-h) + 20px); max-height: calc(100vh - var(--header-h) - 40px); overflow-y: auto; scrollbar-width: none; }
-.card { background: var(--s1); border: 1px solid var(--line-1); border-radius: var(--r-xl); min-width: 0; }
-.card-h { display: flex; align-items: center; gap: 9px; margin: 0; padding: 14px 18px; border-bottom: 1px solid var(--line-1); font-size: 13px; font-weight: 600; }
-.card-h svg.i { color: var(--t3); }
-.card-h .aside { margin-left: auto; color: var(--t3); font-weight: 400; font-size: 12px; display: flex; align-items: center; gap: 10px; }
-.card-b { padding: 16px 18px; }
-.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+/* ===== Page ===== */
+.page { max-width: 1600px; margin: 0 auto; padding: var(--space-6) var(--space-6) var(--space-10); display: flex; flex-direction: column; gap: var(--space-4); }
+.row { display: grid; grid-template-columns: minmax(0, 8fr) minmax(320px, 4fr); gap: var(--space-4); align-items: stretch; }
+.stack { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.card { background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius); min-width: 0; display: flex; flex-direction: column; }
+.card-h { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-sm); font-weight: 600; color: var(--text-1); min-height: 46px; }
+.card-h svg.i { color: var(--text-3); }
+.card-h .aside { margin-left: auto; color: var(--text-3); font-weight: 400; font-size: var(--fs-xs); display: flex; align-items: center; gap: var(--space-3); }
+.card-b { padding: var(--space-4); flex: 1; min-width: 0; }
+.sub { margin: var(--space-4) 0 var(--space-2); color: var(--text-3); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em; }
+.sub:first-child { margin-top: 0; }
 
-/* ===== Vue d'ensemble ===== */
-.overview { display: grid; grid-template-columns: 1.25fr 1fr 1fr 1fr; }
-.ov { padding: 18px 20px; min-width: 0; }
-.ov + .ov { border-left: 1px solid var(--line-1); }
-.ov .l { display: flex; align-items: center; gap: 7px; color: var(--t2); font-size: 12px; }
-.ov .l svg.i { width: 14px; height: 14px; color: var(--t3); }
-.ov .v { font-size: 30px; font-weight: 700; letter-spacing: -.8px; line-height: 1.15; margin-top: 8px; }
-.ov .s { color: var(--t3); font-size: 12px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ov .spark { display: block; width: 100%; height: 28px; margin-top: 8px; }
+/* groupes de sections */
+.group { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-6); }
+.group-h { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+.group-h h2 { margin: 0; font-size: var(--fs-xl); font-weight: 650; letter-spacing: -.3px; }
+.group-h p { margin: 0; color: var(--text-3); font-size: var(--fs-sm); }
+.bento { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
+.span-r2 { grid-row: span 2; }
+.span-c3 { grid-column: 1 / -1; }
+.span-c2 { grid-column: span 2; }
+.row.top-aligned { align-items: start; }
+.spaced { margin-top: var(--space-6); }
+
+/* ===== Bandeau KPI ===== */
+.kpis { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius); }
+.kpi { padding: var(--space-4) var(--space-5); min-width: 0; }
+.kpi + .kpi { border-left: 1px solid var(--border-subtle); }
+.kpi .l { display: flex; align-items: center; gap: var(--space-2); color: var(--text-2); font-size: var(--fs-xs); font-weight: 500; }
+.kpi .l svg.i { width: 14px; height: 14px; color: var(--text-3); }
+.kpi .v { font-size: var(--fs-kpi); font-weight: 650; letter-spacing: -.8px; line-height: 1.1; margin-top: var(--space-2); }
+.kpi .s { color: var(--text-3); font-size: var(--fs-xs); margin-top: var(--space-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi .spark { display: block; width: 100%; height: 28px; margin-top: var(--space-2); }
 
 /* ===== Vue live ===== */
-.shot { position: relative; aspect-ratio: 16 / 9; background: #050605; border-radius: 0 0 var(--r-xl) var(--r-xl); overflow: hidden; }
+.shot { position: relative; aspect-ratio: 16 / 9; background: var(--surface-page); border-radius: 0 0 var(--radius) var(--radius); overflow: hidden; }
 .shot img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
 .shot img:not([src]) { visibility: hidden; }
-.shot .wait { position: absolute; inset: 0; display: grid; place-items: center; color: var(--t3); }
-.shot .stale { position: absolute; right: 12px; bottom: 12px; }
+.shot .wait { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-3); }
+.shot .stale { position: absolute; right: var(--space-3); bottom: var(--space-3); }
 
 /* ===== Graphique ===== */
-#chart { width: 100%; height: 220px; display: block; }
-.legend { display: flex; gap: 14px; }
-.legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+#chart { width: 100%; height: 100%; min-height: 240px; display: block; }
+.chart-b { display: flex; }
+.legend { display: flex; gap: var(--space-3); }
+.legend i { display: inline-block; width: var(--swatch-w); height: var(--swatch-h); border-radius: var(--swatch-h); margin-right: var(--space-2); vertical-align: middle; }
 
 /* ===== Lignes cle/valeur ===== */
-.kv { display: grid; grid-template-columns: auto 1fr; gap: 9px 14px; margin: 0; align-items: baseline; }
-.kv dt { color: var(--t2); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 10px var(--space-4); margin: 0; align-items: baseline; font-size: var(--fs-sm); }
+.kv dt { color: var(--text-2); }
 .kv dd { margin: 0; text-align: right; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bossname { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
-.bar { height: 5px; border-radius: 99px; background: var(--s4); overflow: hidden; margin-top: 12px; }
-.bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .6s; }
+.kv.wrap { grid-template-columns: 1fr; gap: 0; }
+.kv.wrap dt { font-size: var(--fs-xs); color: var(--text-3); margin-top: var(--space-3); }
+.kv.wrap dt:first-child { margin-top: 0; }
+.kv.wrap dd { text-align: left; white-space: normal; overflow-wrap: anywhere; font-weight: 500; color: var(--text-1); margin-top: 2px; }
+.bossname { font-size: var(--fs-lg); font-weight: 650; letter-spacing: -.2px; }
+.bar { height: 4px; border-radius: var(--radius-pill); background: var(--surface-4); overflow: hidden; margin-top: var(--space-3); }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: var(--radius-pill); transition: width .6s; }
 
-/* ===== Deck ===== */
-.elems { display: flex; height: 6px; border-radius: 99px; overflow: hidden; background: var(--s4); }
+/* ===== Listes compactes (deck, styles, sauts, pats...) ===== */
+.elems { display: flex; height: 6px; border-radius: var(--radius-pill); overflow: hidden; background: var(--surface-4); }
 .elems i { display: block; height: 100%; }
-.elegend { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 14px; color: var(--t2); font-size: 12px; }
-.edot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
-.cards { display: grid; grid-template-columns: 1fr; gap: 6px; }
-.cardx { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: var(--r-md); background: var(--s2); min-width: 0; }
-.cost { flex: none; width: 21px; height: 21px; border-radius: 6px; display: grid; place-items: center; background: var(--info-soft); color: var(--info); font-size: 11.5px; font-weight: 700; }
+.elegend { display: flex; flex-wrap: wrap; gap: var(--space-3); margin: var(--space-2) 0 var(--space-3); color: var(--text-2); font-size: var(--fs-xs); }
+.edot { display: inline-block; width: var(--dot); height: var(--dot); border-radius: 50%; margin-right: var(--space-2); }
+.cards { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--border-subtle); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); overflow: hidden; }
+.cards > .empty { background: var(--surface-1); }
+.cardx { display: flex; align-items: center; gap: var(--space-3); padding: 7px 10px; background: var(--surface-1); min-width: 0; font-size: var(--fs-sm); }
+.cardx:hover { background: var(--surface-2); }
+.cost { flex: none; min-width: 22px; height: 22px; padding: 0 5px; border-radius: var(--radius-sm); display: grid; place-items: center; background: var(--surface-3); color: var(--text-2); font-size: var(--fs-xs); font-weight: 700; font-variant-numeric: tabular-nums; }
 .cardx .n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-.cardx .m { color: var(--t3); font-size: 12px; white-space: nowrap; }
+.cardx .m { color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.notes { font-size: var(--fs-sm); color: var(--text-2); display: grid; gap: 6px; }
+.notes b { color: var(--text-1); font-weight: 600; }
 
 /* ===== Reseau ===== */
-.netgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
-.netgrid .k { color: var(--t2); font-size: 12px; }
-.netgrid .v { font-size: 18px; font-weight: 700; }
-#n-hist { width: 100%; height: 56px; display: block; margin-top: 14px; }
+.netgrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-3) var(--space-4); }
+.netgrid .k { color: var(--text-2); font-size: var(--fs-xs); }
+.netgrid .v { font-size: var(--fs-lg); font-weight: 650; }
+#n-hist { width: 100%; height: 56px; display: block; margin-top: var(--space-4); }
 
-/* ===== Colonne laterale ===== */
-.decisions { flex: none; display: flex; flex-direction: column; }
-.decisions .list { overflow: auto; height: 44vh; min-height: 300px; padding: 6px 0; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
-.dec { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 10px; padding: 8px 18px; border-left: 2px solid transparent; }
-.dec:first-child { border-left-color: var(--accent); background: linear-gradient(90deg, var(--accent-soft), transparent 70%); }
-.dec .t { color: var(--t3); font-size: 12px; padding-top: 1px; }
+/* ===== Flux (decisions, tours) ===== */
+.feedcard .list { flex: 1; overflow: auto; min-height: 0; padding: var(--space-1) 0; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.feedcard.tall .list { max-height: var(--feed-tall); }
+.feedcard.short .list { max-height: var(--feed-short); }
+.dec { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: var(--space-3); padding: 7px var(--space-4); font-size: var(--fs-sm); }
+.dec + .dec { border-top: 1px solid var(--border-subtle); }
+.dec:first-child { background: var(--accent-soft); }
+.dec:first-child .t { color: var(--accent); }
+.dec .t { color: var(--text-3); font-size: var(--fs-xs); padding-top: 2px; }
 .dec .x { min-width: 0; overflow-wrap: anywhere; }
-.live { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 11.5px; font-weight: 600; }
+.live { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: var(--fs-xs); font-weight: 600; }
 .live .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1.6s infinite; }
-.actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.act { text-align: left; cursor: pointer; display: grid; grid-template-columns: auto 1fr; column-gap: 9px; align-items: center; padding: 8px 10px; border-radius: var(--r-md); border: 1px solid transparent; background: var(--s2); transition: background .15s, border-color .15s; min-width: 0; }
-.act:hover { background: var(--s3); border-color: var(--line-2); }
+
+/* ===== Actions ===== */
+.actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.act { text-align: left; cursor: pointer; display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; padding: var(--space-2) 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); background: var(--surface-1); transition: background var(--dur-fast), border-color var(--dur-fast); min-width: 0; }
+.act:hover { background: var(--surface-2); border-color: var(--border-strong); }
 .act:active { transform: translateY(1px); }
-.act svg.i { grid-row: span 2; color: var(--t2); }
-.act b { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.act small { color: var(--t3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.act.main { grid-column: span 2; background: var(--accent-soft); }
+.act svg.i { grid-row: span 2; color: var(--text-3); }
+.act b { font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.act small { color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.act.main { grid-column: span 2; border-color: var(--accent-line); background: var(--accent-soft); }
 .act.main svg.i { color: var(--accent); }
-.act.queued { border-color: rgba(111, 182, 240, .5); background: var(--info-soft); }
+.act.queued { border-color: var(--info); background: var(--info-soft); }
 .act.queued small { color: var(--info); }
-.hint { color: var(--t3); font-size: 11.5px; margin-top: 10px; }
+.hint { color: var(--text-3); font-size: var(--fs-xs); margin-top: var(--space-3); }
 
 /* ===== Historique (onglets) ===== */
-.tabs { display: inline-flex; gap: 2px; padding: 3px; background: var(--s2); border-radius: var(--r-md); }
-.tabs button { border: 0; background: transparent; color: var(--t2); font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; }
-.tabs button[aria-selected="true"], .tabs button[aria-pressed="true"] { background: var(--s4); color: var(--t1); }
-.scroll { max-height: 420px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
-.feed-row { display: grid; grid-template-columns: 46px 84px minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 8px 18px; border-bottom: 1px solid var(--line-1); }
+.tabs { display: inline-flex; gap: 2px; padding: 3px; background: var(--surface-2); border-radius: var(--radius-sm); }
+.tabs button { border: 0; background: transparent; color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; padding: 5px 10px; border-radius: 4px; cursor: pointer; transition: background var(--dur-fast), color var(--dur-fast); }
+.tabs button:hover { color: var(--text-1); }
+.tabs button[aria-selected="true"], .tabs button[aria-pressed="true"] { background: var(--surface-4); color: var(--text-1); }
+.scroll { max-height: 440px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.feed-row { display: grid; grid-template-columns: 46px 86px minmax(0, 1fr); gap: var(--space-3); align-items: baseline; padding: 7px var(--space-4); border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-sm); }
 .feed-row:last-child { border-bottom: 0; }
 .feed-row .x { min-width: 0; overflow-wrap: anywhere; }
-.t { color: var(--t3); }
-.tag { justify-self: start; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 5px; letter-spacing: .3px; background: var(--s3); color: var(--t2); }
-.tg-EQUIPE { color: var(--accent); background: var(--accent-soft); }
-.tg-VENDU, .tg-AVENTURE { color: var(--warn); background: var(--warn-soft); }
-.tg-COFFRE, .tg-COFFRES, .tg-HDV, .tg-ACTION { color: var(--info); background: var(--info-soft); }
-.tg-DECK, .tg-ARENE { color: var(--violet); background: var(--violet-soft); }
-.tg-CARAC, .tg-FUSION { color: var(--teal); background: var(--teal-soft); }
+.tag { justify-self: start; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; letter-spacing: .3px; background: var(--surface-3); color: var(--text-2); }
+.tg-EQUIPE, .tg-CARAC, .tg-FUSION, .tg-DECK { color: var(--accent); background: var(--accent-soft); }
+.tg-VENDU, .tg-AVENTURE, .tg-HDV, .tg-COFFRE, .tg-COFFRES { color: var(--warn); background: var(--warn-soft); }
+.tg-ACTION, .tg-ARENE { color: var(--info); background: var(--info-soft); }
 .tg-BOSS, .tg-TROP { color: var(--danger); background: var(--danger-soft); }
-.log { font: 12px/1.65 var(--mono); padding: 12px 18px; }
+.log { font: var(--fs-xs)/1.65 var(--mono); padding: var(--space-3) var(--space-4); color: var(--text-2); }
 .log div { white-space: pre-wrap; overflow-wrap: anywhere; }
-.empty { color: var(--t3); padding: 18px; }
+.empty { color: var(--text-3); padding: var(--space-4); font-size: var(--fs-sm); }
 
 /* ===== Reglages ===== */
-details.card > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 9px; padding: 14px 18px; font-weight: 600; }
+details.card > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); font-weight: 600; font-size: var(--fs-sm); min-height: 46px; }
 details.card > summary::-webkit-details-marker { display: none; }
-details.card > summary svg.i { color: var(--t3); }
-details.card > summary .chev { margin-left: auto; transition: transform .2s; }
-details[open].card > summary { border-bottom: 1px solid var(--line-1); }
+details.card > summary svg.i { color: var(--text-3); }
+details.card > summary .chev { margin-left: auto; transition: transform var(--dur); }
+details[open].card > summary { border-bottom: 1px solid var(--border-subtle); }
 details[open].card > summary .chev { transform: rotate(180deg); }
-.cfg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 18px; padding: 16px 18px; }
-.cfg label { display: grid; gap: 6px; font-size: 12px; color: var(--t2); align-content: start; }
-.cfg small { color: var(--t3); font-size: 11px; }
-.cfg input { font: inherit; color: var(--t1); background: var(--s2); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 8px 10px; width: 100%; height: 36px; }
-.cfg input:focus { border-color: var(--accent); outline: none; }
-.cfg-actions { display: flex; align-items: center; gap: 12px; padding: 0 18px 16px; }
+.cfg { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4) var(--space-5); padding: var(--space-4); }
+.cfg label { display: grid; gap: 6px; font-size: var(--fs-xs); color: var(--text-2); align-content: start; }
+.cfg small { color: var(--text-3); font-size: var(--fs-xs); }
+.cfg input { font: inherit; font-size: var(--fs-sm); color: var(--text-1); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: var(--space-2) 10px; width: 100%; height: 36px; transition: border-color var(--dur-fast); }
+.cfg input:hover { border-color: var(--text-3); }
+.cfg input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.cfg-actions { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-4) var(--space-4); }
 
 /* ===== Responsive ===== */
-@media (max-width: 1360px) { .grid3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1280px) {
+  .row { grid-template-columns: minmax(0, 1fr); }
+  .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .span-r2 { grid-row: auto; }
+  .cfg { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .netgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (max-width: 1100px) {
-  .layout { grid-template-columns: 1fr; }
-  .side { position: static; max-height: none; overflow: visible; }
-  .decisions .list { max-height: 360px; }
-  .overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ov:nth-child(3) { border-left: 0; }
-  .ov:nth-child(n+3) { border-top: 1px solid var(--line-1); }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi:nth-child(3) { border-left: 0; }
+  .kpi:nth-child(n+3) { border-top: 1px solid var(--border-subtle); }
   .uptime, .sep.hide-md { display: none; }
 }
 @media (max-width: 720px) {
-  .top { height: auto; flex-wrap: wrap; padding: 10px 16px; gap: 10px; }
-  .layout { padding: 16px; gap: 16px; }
-  .alert { margin: 12px 16px 0; }
-  .grid3, .cfg { grid-template-columns: 1fr; }
+  .top { height: auto; flex-wrap: wrap; padding: 10px var(--space-4); gap: 10px; }
+  .page { padding: var(--space-4); }
+  .alert { margin: var(--space-3) var(--space-4) 0; }
+  .bento, .cfg { grid-template-columns: 1fr; }
+  .span-c2 { grid-column: auto; }
   .netchip .meter { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -250,7 +292,7 @@ details[open].card > summary .chev { transform: rotate(180deg); }
   <span class="pill" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="statusTxt">...</span></span>
   <div class="grow"></div>
   <button class="netchip" id="netchip" type="button" title="Requetes envoyees au serveur du jeu la derniere minute (hors images et scripts). Clic : detail.">
-    <svg class="i" style="color:var(--t3)"><use href="#i-wifi"/></svg>
+    <svg class="i"><use href="#i-wifi"/></svg>
     <span class="val num" id="h-rate">-</span><span class="lbl num" id="h-cap"></span>
     <span class="meter"><i id="h-gauge"></i></span>
   </button>
@@ -266,81 +308,48 @@ details[open].card > summary .chev { transform: rotate(180deg); }
   <div><b>Test de presence en attente.</b> <span>Clique sur le chiffre demande dans la fenetre Chromium du bot, elle vient de passer au premier plan.</span></div>
 </div>
 
-<div class="layout">
-  <main class="col">
-    <section class="card overview" aria-label="Vue d'ensemble">
-      <div class="ov"><div class="l"><svg class="i"><use href="#i-zap"/></svg>XP, 60 dernieres minutes</div><div class="v num c-ok" id="k-xph">-</div><svg class="spark" id="spark" viewBox="0 0 240 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
-      <div class="ov"><div class="l"><svg class="i"><use href="#i-trophy"/></svg>Taux de victoire</div><div class="v num" id="k-win">-</div><div class="s num" id="k-winS"></div></div>
-      <div class="ov"><div class="l"><svg class="i"><use href="#i-crown"/></svg>Boss de zone</div><div class="v num" id="k-boss">-</div><div class="s" id="k-bossS"></div></div>
-      <div class="ov"><div class="l"><svg class="i"><use href="#i-swords"/></svg>Arene</div><div class="v num" id="k-elo" style="color:var(--violet)">-</div><div class="s" id="k-eloS"></div></div>
-    </section>
+<main class="page">
+  <section class="kpis" aria-label="Vue d'ensemble">
+    <div class="kpi"><div class="l"><svg class="i"><use href="#i-zap"/></svg>XP, 60 dernieres minutes</div><div class="v num c-ok" id="k-xph">-</div><svg class="spark" id="spark" viewBox="0 0 240 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+    <div class="kpi"><div class="l"><svg class="i"><use href="#i-trophy"/></svg>Taux de victoire</div><div class="v num" id="k-win">-</div><div class="s num" id="k-winS"></div></div>
+    <div class="kpi"><div class="l"><svg class="i"><use href="#i-crown"/></svg>Boss de zone</div><div class="v num" id="k-boss">-</div><div class="s" id="k-bossS"></div></div>
+    <div class="kpi"><div class="l"><svg class="i"><use href="#i-swords"/></svg>Arene</div><div class="v num" id="k-elo">-</div><div class="s" id="k-eloS"></div></div>
+  </section>
 
+  <div class="row top-aligned">
     <section class="card">
       <h2 class="card-h"><svg class="i"><use href="#i-monitor"/></svg>Fenetre du bot<span class="aside num" id="shotT"></span></h2>
       <div class="shot"><span class="wait" id="shotWait">Capture en attente...</span><img id="shot" alt="Capture en direct de la fenetre du bot"><span class="pill stale" id="shotStale" hidden>image figee</span></div>
     </section>
+    <div class="stack">
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-sparkles"/></svg>Actions<span class="aside" id="queueTxt"></span></h2>
+        <div class="card-b">
+          <div class="actions" id="actions"></div>
+          <div class="hint">Executees a la fin du combat en cours. Recharger et Pause sont immediats.</div>
+        </div>
+      </section>
+    </div>
+  </div>
 
+  <div class="row">
     <section class="card">
       <h2 class="card-h"><svg class="i"><use href="#i-chart"/></svg>24 dernieres heures
         <span class="aside legend"><span><i style="background:var(--accent)"></i>XP</span><span><i style="background:var(--warn)"></i>Kamas</span><span><i style="background:var(--danger)"></i>Defaites</span></span></h2>
-      <div class="card-b"><svg id="chart" viewBox="0 0 960 220" preserveAspectRatio="none" role="img" aria-label="XP, kamas et combats par heure sur 24 heures"></svg></div>
+      <div class="card-b chart-b"><svg id="chart" viewBox="0 0 960 220" preserveAspectRatio="none" role="img" aria-label="XP, kamas et combats par heure sur 24 heures"></svg></div>
     </section>
+    <section class="card feedcard tall">
+      <h2 class="card-h"><svg class="i"><use href="#i-brain"/></svg>Decisions<span class="aside"><span class="live"><span class="dot"></span>en direct</span></span></h2>
+      <div class="list" id="decisions"></div>
+    </section>
+  </div>
 
-    <div class="grid3">
-      <section class="card">
-        <h2 class="card-h"><svg class="i"><use href="#i-pin"/></svg>Activite</h2>
-        <div class="card-b"><dl class="kv">
-          <dt>Mode</dt><dd id="a-mode">-</dd>
-          <dt>Avant l'aventure</dt><dd id="a-hunt">-</dd>
-          <dt>Zone de chasse</dt><dd id="a-zone">-</dd>
-          <dt>Palier de defaites</dt><dd id="a-strikes">-</dd>
-          <dt>Tests de presence</dt><dd id="a-pres" class="num">-</dd>
-        </dl></div>
-      </section>
-
-      <section class="card">
-        <h2 class="card-h"><svg class="i"><use href="#i-crown"/></svg>Prochain boss<span class="aside" id="b-tier"></span></h2>
-        <div class="card-b">
-          <div class="bossname" id="b-name">en attente de verification</div>
-          <div class="muted num" id="b-info"></div>
-          <div class="bar" role="progressbar" aria-label="Approche du boss" aria-valuemin="0" aria-valuemax="100" id="b-barWrap"><i id="b-bar"></i></div>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2 class="card-h"><svg class="i"><use href="#i-swords"/></svg>Arene<span class="aside" id="ar-at"></span></h2>
-        <div class="card-b"><dl class="kv">
-          <dt>Elo</dt><dd id="ar-elo" class="num">-</dd>
-          <dt>Niveau d'opti</dt><dd id="ar-opti" class="num">-</dd>
-          <dt>Classement</dt><dd id="ar-rank" class="num">-</dd>
-          <dt>V / D (jeu, bot)</dt><dd class="num"><span id="ar-wl">-</span> · <span id="ar-bot">-</span></dd>
-          <dt>Dernier combat</dt><dd id="ar-last">-</dd>
-        </dl></div>
-      </section>
-
-      <section class="card">
-        <h2 class="card-h"><svg class="i"><use href="#i-coins"/></svg>Economie</h2>
-        <div class="card-b"><dl class="kv">
-          <dt>Gains en combat</dt><dd id="e-fight" class="num">-</dd>
-          <dt>Ventes marchand</dt><dd id="e-sold" class="num">-</dd>
-          <dt>Achats HDV</dt><dd id="e-hdv" class="num">-</dd>
-          <dt>Coffres ouverts / achetes</dt><dd id="e-chests" class="num">-</dd>
-          <dt>Equipes · fusions</dt><dd class="num"><span id="e-equips">-</span> · <span id="e-fusions">-</span></dd>
-        </dl></div>
-      </section>
-
-      <section class="card">
-        <h2 class="card-h"><svg class="i"><use href="#i-layers"/></svg>Deck en combat<span class="aside" id="d-main"></span></h2>
-        <div class="card-b">
-          <div class="elems" id="elems"></div>
-          <div class="elegend" id="elemLegend"></div>
-          <div class="cards" id="cards"><div class="empty" style="padding:0">Calcule au prochain passage de gestion.</div></div>
-        </div>
-      </section>
-
-      <section class="card">
+  <section class="group" aria-labelledby="g-ai">
+    <div class="group-h"><h2 id="g-ai">Intelligence du bot</h2><p>Ce que le moteur mesure, apprend et applique tout seul.</p></div>
+    <div class="bento">
+      <section class="card span-r2">
         <h2 class="card-h"><svg class="i"><use href="#i-brain"/></svg>Moteur de combat<span class="aside" id="m-mode"></span></h2>
-        <div class="card-b"><dl class="kv">
+        <div class="card-b"><dl class="kv wrap">
           <dt>Combat en cours</dt><dd id="m-now">-</dd>
           <dt>Victoires chasse (20 derniers)</dt><dd id="m-rate" class="num">-</dd>
           <dt>Zone</dt><dd id="m-zone">-</dd>
@@ -351,31 +360,110 @@ details[open].card > summary .chev { transform: rotate(180deg); }
           <dt>Build</dt><dd id="m-build">-</dd>
           <dt>Meilleures zones (XP/min)</dt><dd id="m-zones">-</dd>
         </dl>
-          <div class="muted" style="margin:12px 0 6px">Styles appris (victoires, recompense moyenne)</div>
-          <div class="cards" id="m-prof"></div>
-          <div class="muted" style="margin:12px 0 6px">Correctif de degats appris (reel / prevu)</div>
+          <div class="sub">Correctif de degats appris (reel / prevu)</div>
           <div class="elegend" id="m-k"></div>
-          <div class="muted" style="margin:12px 0 6px">Sauts XP hard (recents)</div>
-          <div class="cards" id="m-jumps"></div>
-          <div class="muted" style="margin:12px 0 6px">Pats appris (hypothese qui marche, par groupe d'ennemis)</div>
-          <div class="cards" id="m-stall"></div>
-          <div class="muted" style="margin:12px 0 6px">Deblocages appris (par ecran)</div>
-          <div class="cards" id="m-unblock"></div>
-          <div class="muted" style="margin:12px 0 6px">Adversaires d'arene evites</div>
-          <div id="m-avoid" class="muted">aucun</div>
-          <div class="muted" style="margin:12px 0 6px">Indices de defaite connus</div>
-          <div id="m-hints" class="muted">aucun</div>
+          <div class="sub">Indices de defaite connus</div>
+          <div id="m-hints" class="notes">aucun</div>
         </div>
       </section>
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-trophy"/></svg>Styles de jeu appris<span class="aside">victoires, recompense</span></h2>
+        <div class="card-b"><div class="cards" id="m-prof"></div></div>
+      </section>
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-zap"/></svg>Sauts XP hard</h2>
+        <div class="card-b"><div class="cards" id="m-jumps"></div></div>
+      </section>
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-shield"/></svg>Pats et deblocages appris</h2>
+        <div class="card-b">
+          <div class="sub">Pats (hypothese qui marche, par groupe d'ennemis)</div>
+          <div class="cards" id="m-stall"></div>
+          <div class="sub">Deblocages (meilleure action, par ecran)</div>
+          <div class="cards" id="m-unblock"></div>
+        </div>
+      </section>
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-swords"/></svg>Adversaires d'arene evites</h2>
+        <div class="card-b"><div id="m-avoid" class="notes">aucun</div></div>
+      </section>
+      <section class="card feedcard short span-c3">
+        <h2 class="card-h"><svg class="i"><use href="#i-swords"/></svg>Tours de combat<span class="aside" id="t-count"></span></h2>
+        <div class="list" id="turns"></div>
+      </section>
+    </div>
+  </section>
 
-      <section class="card" id="netcard">
+  <section class="group" aria-labelledby="g-char">
+    <div class="group-h"><h2 id="g-char">Personnage et economie</h2><p>Etat du personnage, des combats speciaux et des echanges avec le serveur.</p></div>
+    <div class="bento">
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-pin"/></svg>Activite</h2>
+        <div class="card-b"><dl class="kv">
+          <dt>Mode</dt><dd id="a-mode">-</dd>
+          <dt>Avant l'aventure</dt><dd id="a-hunt">-</dd>
+          <dt>Zone de chasse</dt><dd id="a-zone">-</dd>
+          <dt>Palier de defaites</dt><dd id="a-strikes">-</dd>
+          <dt>Tests de presence</dt><dd id="a-pres" class="num">-</dd>
+        </dl></div>
+      </section>
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-crown"/></svg>Prochain boss<span class="aside" id="b-tier"></span></h2>
+        <div class="card-b">
+          <div class="bossname" id="b-name">en attente de verification</div>
+          <div class="muted num" id="b-info"></div>
+          <div class="bar" role="progressbar" aria-label="Approche du boss" aria-valuemin="0" aria-valuemax="100" id="b-barWrap"><i id="b-bar"></i></div>
+        </div>
+      </section>
+      <section class="card span-r2">
+        <h2 class="card-h"><svg class="i"><use href="#i-layers"/></svg>Deck en combat<span class="aside" id="d-main"></span></h2>
+        <div class="card-b">
+          <div class="elems" id="elems"></div>
+          <div class="elegend" id="elemLegend"></div>
+          <div class="cards" id="cards"><div class="empty">Calcule au prochain passage de gestion.</div></div>
+        </div>
+      </section>
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-swords"/></svg>Arene<span class="aside" id="ar-at"></span></h2>
+        <div class="card-b"><dl class="kv">
+          <dt>Elo</dt><dd id="ar-elo" class="num">-</dd>
+          <dt>Niveau d'opti</dt><dd id="ar-opti" class="num">-</dd>
+          <dt>Classement</dt><dd id="ar-rank" class="num">-</dd>
+          <dt>V / D (jeu, bot)</dt><dd class="num"><span id="ar-wl">-</span> · <span id="ar-bot">-</span></dd>
+          <dt>Dernier combat</dt><dd id="ar-last">-</dd>
+        </dl></div>
+      </section>
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-coins"/></svg>Economie</h2>
+        <div class="card-b"><dl class="kv">
+          <dt>Gains en combat</dt><dd id="e-fight" class="num">-</dd>
+          <dt>Ventes marchand</dt><dd id="e-sold" class="num">-</dd>
+          <dt>Achats HDV</dt><dd id="e-hdv" class="num">-</dd>
+          <dt>Coffres ouverts / achetes</dt><dd id="e-chests" class="num">-</dd>
+          <dt>Equipes · fusions</dt><dd class="num"><span id="e-equips">-</span> · <span id="e-fusions">-</span></dd>
+        </dl></div>
+      </section>
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-clock"/></svg>Planning</h2>
+        <div class="card-b"><dl class="kv">
+          <dt>Passe de gestion</dt><dd id="p-pass" class="num">-</dd>
+          <dt>Arene</dt><dd id="p-arena" class="num">-</dd>
+          <dt>Boss</dt><dd id="p-boss" class="num">-</dd>
+          <dt>Energie</dt><dd id="p-energy" class="num">-</dd>
+          <dt>Emplacements vides</dt><dd id="p-empty">-</dd>
+          <dt>Combats (session)</dt><dd id="p-combats" class="num">-</dd>
+          <dt>Plage horaire</dt><dd id="p-sched" class="num">-</dd>
+          <dt>Combats, derniere heure</dt><dd id="p-rate" class="num">-</dd>
+        </dl></div>
+      </section>
+      <section class="card span-c2" id="netcard">
         <h2 class="card-h"><svg class="i"><use href="#i-wifi"/></svg>Reseau vers le serveur<span class="aside">derniere minute</span></h2>
         <div class="card-b">
           <div class="netgrid">
             <div><div class="k">Pages</div><div class="v num" id="n-page">-</div></div>
             <div><div class="k">Actions</div><div class="v num" id="n-action">-</div></div>
             <div><div class="k">Donnees</div><div class="v num" id="n-donnee">-</div></div>
-            <div><div class="k">Images, scripts</div><div class="v num" id="n-asset" style="color:var(--t2)">-</div></div>
+            <div><div class="k">Images, scripts</div><div class="v num muted" id="n-asset">-</div></div>
             <div><div class="k">Total session</div><div class="v num" id="n-total">-</div></div>
             <div><div class="k">429 · ralentis</div><div class="v num" id="n-429">-</div></div>
           </div>
@@ -384,58 +472,24 @@ details[open].card > summary .chev { transform: rotate(180deg); }
         </div>
       </section>
     </div>
+  </section>
 
-    <section class="card">
-      <h2 class="card-h"><svg class="i"><use href="#i-scroll"/></svg>Historique
-        <span class="aside">
-          <span class="tabs" role="tablist" id="histTabs"><button type="button" role="tab" data-tab="feed" aria-selected="true">Butin et gestion</button><button type="button" role="tab" data-tab="log" aria-selected="false">Journal</button></span>
-          <span class="tabs" id="filters" role="group" aria-label="Filtrer le journal" hidden></span>
-        </span></h2>
-      <div class="scroll" id="feed"></div>
-      <div class="scroll log" id="log" tabindex="0" aria-label="Journal du bot" hidden></div>
-    </section>
+  <section class="card spaced">
+    <h2 class="card-h"><svg class="i"><use href="#i-scroll"/></svg>Historique
+      <span class="aside">
+        <span class="tabs" role="tablist" id="histTabs"><button type="button" role="tab" data-tab="feed" aria-selected="true">Butin et gestion</button><button type="button" role="tab" data-tab="log" aria-selected="false">Journal</button></span>
+        <span class="tabs" id="filters" role="group" aria-label="Filtrer le journal" hidden></span>
+      </span></h2>
+    <div class="scroll" id="feed"></div>
+    <div class="scroll log" id="log" tabindex="0" aria-label="Journal du bot" hidden></div>
+  </section>
 
-    <details class="card" id="cfgBox">
-      <summary><svg class="i"><use href="#i-sliders"/></svg>Reglages<span class="muted" id="cfgMsg" style="font-weight:400"></span><svg class="i chev"><use href="#i-chev"/></svg></summary>
-      <div class="cfg" id="cfg"></div>
-      <div class="cfg-actions"><button class="btn primary" id="save" type="button">Enregistrer</button><span class="muted">Pris en compte tout de suite, sans redemarrage.</span></div>
-    </details>
-  </main>
-
-  <aside class="col side">
-    <section class="card decisions">
-      <h2 class="card-h"><svg class="i"><use href="#i-swords"/></svg>Tours de combat<span class="aside" id="t-count"></span></h2>
-      <div class="list" id="turns" style="height:28vh;min-height:200px"></div>
-    </section>
-
-    <section class="card decisions">
-      <h2 class="card-h"><svg class="i"><use href="#i-brain"/></svg>Decisions<span class="aside"><span class="live"><span class="dot"></span>en direct</span></span></h2>
-      <div class="list" id="decisions"></div>
-    </section>
-
-    <section class="card">
-      <h2 class="card-h"><svg class="i"><use href="#i-sparkles"/></svg>Actions<span class="aside" id="queueTxt"></span></h2>
-      <div class="card-b">
-        <div class="actions" id="actions"></div>
-        <div class="hint">Executees a la fin du combat en cours. Recharger et Pause sont immediats.</div>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2 class="card-h"><svg class="i"><use href="#i-clock"/></svg>Planning</h2>
-      <div class="card-b"><dl class="kv">
-        <dt>Passe de gestion</dt><dd id="p-pass" class="num">-</dd>
-        <dt>Arene</dt><dd id="p-arena" class="num">-</dd>
-        <dt>Boss</dt><dd id="p-boss" class="num">-</dd>
-        <dt>Energie</dt><dd id="p-energy" class="num">-</dd>
-        <dt>Emplacements vides</dt><dd id="p-empty">-</dd>
-        <dt>Combats (session)</dt><dd id="p-combats" class="num">-</dd>
-        <dt>Plage horaire</dt><dd id="p-sched" class="num">-</dd>
-        <dt>Combats, derniere heure</dt><dd id="p-rate" class="num">-</dd>
-      </dl></div>
-    </section>
-  </aside>
-</div>
+  <details class="card" id="cfgBox">
+    <summary><svg class="i"><use href="#i-sliders"/></svg>Reglages<span class="muted" id="cfgMsg" style="font-weight:400"></span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+    <div class="cfg" id="cfg"></div>
+    <div class="cfg-actions"><button class="btn primary" id="save" type="button">Enregistrer</button><span class="muted">Pris en compte tout de suite, sans redemarrage.</span></div>
+  </details>
+</main>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -446,6 +500,7 @@ const hm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', min
 const hms = (t) => new Date(t).toLocaleTimeString('fr-FR');
 const dur = (ms) => { const s = Math.max(0, Math.round(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h} h ${String(m).padStart(2, '0')}` : m ? `${m} min ${String(s % 60).padStart(2, '0')} s` : `${s} s`; };
 const icon = (id) => `<svg class="i"><use href="#i-${id}"/></svg>`;
+const tok = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(); // couleurs des graphiques = tokens CSS
 const ELEM = { Terre: 'var(--el-terre)', Feu: 'var(--el-feu)', Eau: 'var(--el-eau)', Air: 'var(--el-air)', Neutre: 'var(--el-neutre)' };
 const TIME_KEYS = new Set(['activeFrom', 'activeTo']);
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -533,7 +588,7 @@ $('sound').onclick = async () => { audio ??= new AudioContext(); await audio.res
 function drawSpark(hours) {
   const W = 240, H = 28, mx = Math.max(1, ...hours.map((h) => h.xp));
   const p = hours.map((h, i) => `${(i / (hours.length - 1)) * W},${H - 2 - (h.xp / mx) * (H - 4)}`).join(' ');
-  $('spark').innerHTML = `<polygon points="0,${H} ${p} ${W},${H}" fill="rgba(163,227,95,.13)"/><polyline points="${p}" fill="none" stroke="#a3e35f" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`;
+  $('spark').innerHTML = `<polygon points="0,${H} ${p} ${W},${H}" fill="${tok('--accent-soft')}"/><polyline points="${p}" fill="none" stroke="${tok('--accent')}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`;
 }
 function drawChart(hours, now) {
   const W = 960, H = 220, top = 18, plotH = 126, barTop = 158, barH = 40, n = hours.length, bw = W / n;
@@ -541,17 +596,17 @@ function drawChart(hours, now) {
   const x = (i) => i * bw + bw / 2, y = (v, m) => top + plotH - (v / m) * plotH;
   const line = (key, m) => hours.map((h, i) => `${x(i)},${y(h[key], m)}`).join(' ');
   let s = '';
-  for (const f of [0, 0.5, 1]) s += `<line x1="0" x2="${W}" y1="${top + plotH * f}" y2="${top + plotH * f}" stroke="#222825" ${f === 1 ? '' : 'stroke-dasharray="3 6"'}/>`;
-  s += `<text x="0" y="11" fill="#6f7973" font-size="11">max ${esc(short(mx))} XP · ${esc(short(mk))} kamas par heure</text>`;
-  s += `<polygon points="${x(0)},${top + plotH} ${line('xp', mx)} ${x(n - 1)},${top + plotH}" fill="rgba(163,227,95,.12)"/>`;
-  s += `<polyline points="${line('xp', mx)}" fill="none" stroke="#a3e35f" stroke-width="2.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
-  s += `<polyline points="${line('kamas', mk)}" fill="none" stroke="#f0c35a" stroke-width="1.6" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
+  for (const f of [0, 0.5, 1]) s += `<line x1="0" x2="${W}" y1="${top + plotH * f}" y2="${top + plotH * f}" stroke="${tok('--border-subtle')}" ${f === 1 ? '' : 'stroke-dasharray="3 6"'}/>`;
+  s += `<text x="0" y="11" fill="${tok('--text-3')}" font-size="11">max ${esc(short(mx))} XP · ${esc(short(mk))} kamas par heure</text>`;
+  s += `<polygon points="${x(0)},${top + plotH} ${line('xp', mx)} ${x(n - 1)},${top + plotH}" fill="${tok('--accent-soft')}"/>`;
+  s += `<polyline points="${line('xp', mx)}" fill="none" stroke="${tok('--accent')}" stroke-width="2.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  s += `<polyline points="${line('kamas', mk)}" fill="none" stroke="${tok('--warn')}" stroke-width="1.6" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
   hours.forEach((h, i) => {
     const tot = h.wins + h.losses, hh = (tot / mc) * barH, lh = (h.losses / mc) * barH, bx = i * bw + 3, w = bw - 6, tip = `<title>${h.wins} victoires, ${h.losses} defaites</title>`;
-    s += `<rect x="${bx}" y="${barTop}" width="${w}" height="${barH}" rx="3" fill="#161a18">${tip}</rect>`;
-    if (tot) s += `<rect x="${bx}" y="${barTop + barH - hh}" width="${w}" height="${hh - lh}" rx="3" fill="#a3e35f" opacity=".7">${tip}</rect>`;
-    if (h.losses) s += `<rect x="${bx}" y="${barTop + barH - lh}" width="${w}" height="${lh}" rx="2" fill="#f26d6d">${tip}</rect>`;
-    if (i % 3 === 2 || i === n - 1) s += `<text x="${x(i)}" y="${H - 2}" fill="#6f7973" font-size="11" text-anchor="middle">${i === n - 1 ? 'maint.' : new Date(now - (n - 1 - i) * 3600000).getHours() + 'h'}</text>`;
+    s += `<rect x="${bx}" y="${barTop}" width="${w}" height="${barH}" rx="3" fill="${tok('--surface-2')}">${tip}</rect>`;
+    if (tot) s += `<rect x="${bx}" y="${barTop + barH - hh}" width="${w}" height="${hh - lh}" rx="3" fill="${tok('--accent')}" opacity=".7">${tip}</rect>`;
+    if (h.losses) s += `<rect x="${bx}" y="${barTop + barH - lh}" width="${w}" height="${lh}" rx="2" fill="${tok('--danger')}">${tip}</rect>`;
+    if (i % 3 === 2 || i === n - 1) s += `<text x="${x(i)}" y="${H - 2}" fill="${tok('--text-3')}" font-size="11" text-anchor="middle">${i === n - 1 ? 'maint.' : new Date(now - (n - 1 - i) * 3600000).getHours() + 'h'}</text>`;
   });
   $('chart').innerHTML = s;
 }
@@ -572,11 +627,11 @@ function renderNet(n, cap) {
   let s = '';
   n.perMin.forEach((m, i) => {
     const hs = (m.srv / mx) * (H - 2), ha = (m.asset / mx) * (H - 2);
-    s += `<rect x="${i * bw + 1}" y="${H - hs - ha}" width="${bw - 2}" height="${ha}" fill="#2e3632"><title>${m.asset} images/scripts</title></rect>`;
-    s += `<rect x="${i * bw + 1}" y="${H - hs}" width="${bw - 2}" height="${hs}" fill="${m.srv >= cap ? '#f26d6d' : '#a3e35f'}"><title>${m.srv} requetes serveur</title></rect>`;
+    s += `<rect x="${i * bw + 1}" y="${H - hs - ha}" width="${bw - 2}" height="${ha}" fill="${tok('--border-strong')}"><title>${m.asset} images/scripts</title></rect>`;
+    s += `<rect x="${i * bw + 1}" y="${H - hs}" width="${bw - 2}" height="${hs}" fill="${m.srv >= cap ? tok('--danger') : tok('--accent')}"><title>${m.srv} requetes serveur</title></rect>`;
   });
   const yc = H - (cap / mx) * (H - 2);
-  s += `<line x1="0" x2="${W}" y1="${yc}" y2="${yc}" stroke="#f0c35a" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`;
+  s += `<line x1="0" x2="${W}" y1="${yc}" y2="${yc}" stroke="${tok('--warn')}" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`;
   $('n-hist').innerHTML = s;
 }
 $('netchip').onclick = () => $('netcard').scrollIntoView({ behavior: 'smooth', block: 'center' });
