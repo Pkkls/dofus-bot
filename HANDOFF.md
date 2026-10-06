@@ -35,6 +35,7 @@ Le site affiche un test de presence ("Es-tu toujours la ? Clique sur le chiffre 
 | Fusion | 3 exemplaires au moins aussi bons que la piece portee | debloque le 06/10, a confirmer |
 | HDV | Achat pour les emplacements vides uniquement | code, jamais declenche |
 | Caracs | Vitalite (vitShare) puis stat de l'element dominant du deck | verifie |
+| Horaires et rythme | `gate()` avant chaque combat : plage horaire (scheduleOn, activeFrom -> activeTo en minutes, peut passer minuit) et plafond maxFightsPerHour (heure glissante). Attente sans requete, reprise seule | verifie (repos, plafond, reprise) |
 | Reseau | Compteur par type, limiteur maxReqPerMin, images /img/ bloquees sauf pendant le test de presence | verifie (5 a 14 req/min) |
 
 ## Architecture (bot.mjs, un seul fichier)

@@ -49,7 +49,7 @@ button { font: inherit; color: inherit; }
 .pill.combat { color: var(--accent); background: var(--accent-soft); }
 .pill.combat .dot { animation: pulse 1.8s ease-in-out infinite; }
 .pill.gestion { color: var(--info); background: var(--info-soft); }
-.pill.pause, .pill.rate-limit, .pill.demarrage, .pill.throttle { color: var(--warn); background: var(--warn-soft); }
+.pill.pause, .pill.rate-limit, .pill.demarrage, .pill.throttle, .pill.repos, .pill.plafond { color: var(--warn); background: var(--warn-soft); }
 .pill.presence, .pill.offline { color: #fff; background: var(--danger); }
 @keyframes pulse { 50% { opacity: .3; } }
 .grow { flex: 1; }
@@ -394,6 +394,8 @@ details[open].card > summary .chev { transform: rotate(180deg); }
         <dt>Energie</dt><dd id="p-energy" class="num">-</dd>
         <dt>Emplacements vides</dt><dd id="p-empty">-</dd>
         <dt>Combats (session)</dt><dd id="p-combats" class="num">-</dd>
+        <dt>Plage horaire</dt><dd id="p-sched" class="num">-</dd>
+        <dt>Combats, derniere heure</dt><dd id="p-rate" class="num">-</dd>
       </dl></div>
     </section>
   </aside>
@@ -409,7 +411,9 @@ const hms = (t) => new Date(t).toLocaleTimeString('fr-FR');
 const dur = (ms) => { const s = Math.max(0, Math.round(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h} h ${String(m).padStart(2, '0')}` : m ? `${m} min ${String(s % 60).padStart(2, '0')} s` : `${s} s`; };
 const icon = (id) => `<svg class="i"><use href="#i-${id}"/></svg>`;
 const ELEM = { Terre: 'var(--el-terre)', Feu: 'var(--el-feu)', Eau: 'var(--el-eau)', Air: 'var(--el-air)', Neutre: 'var(--el-neutre)' };
-const STATUS = { combat: 'En combat', gestion: 'Gestion', pause: 'En pause', throttle: 'Ralenti (limiteur)', presence: 'Presence requise', 'rate-limit': 'Serveur sature', demarrage: 'Demarrage', offline: 'Bot hors ligne' };
+const TIME_KEYS = new Set(['activeFrom', 'activeTo']);
+const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+const STATUS = { repos: 'Repos (hors plage)', plafond: 'Plafond atteint', combat: 'En combat', gestion: 'Gestion', pause: 'En pause', throttle: 'Ralenti (limiteur)', presence: 'Presence requise', 'rate-limit': 'Serveur sature', demarrage: 'Demarrage', offline: 'Bot hors ligne' };
 const MODE = { aventure: 'Aventure (Chemin)', chasse: 'Chasse', boss: 'Boss de zone', arene: 'Arene' };
 const CFG_META = {
   vitShare: ['Part en Vitalite', 'de 0 a 1, le reste dans l\'element du deck', 0, 1, 0.05],
@@ -424,6 +428,10 @@ const CFG_META = {
   blockImages: ['Bloquer les images', '1 oui (moins de charge serveur), 0 non', 0, 1, 1],
   ringSpare: ['Anneaux en reserve', 'les meilleurs du sac gardes, le reste vendu', 0, 20, 1],
   spareWindow: ['Fenetre de niveau reserve', 'reserve = anneaux de niveau >= mon niveau - N', 0, 100, 1],
+  scheduleOn: ['Plage horaire active', '1 = le bot ne joue que dans la plage, 0 = toujours', 0, 1, 1],
+  activeFrom: ['Debut de plage', 'heure de reprise (HH:MM)', 0, 1439, 1],
+  activeTo: ['Fin de plage', 'heure d\'arret, peut passer minuit (HH:MM)', 0, 1439, 1],
+  maxFightsPerHour: ['Combats max par heure', 'heure glissante, 0 = illimite', 0, 600, 1],
 };
 const ACTS = {
   gestion: ['Passe complete', 'sparkles', 'coffres, deck, stuff, HDV, caracs'],
@@ -607,6 +615,8 @@ function render(d) {
   $('p-energy').textContent = S.energy ?? '-';
   $('p-empty').textContent = S.emptySlots?.length ? S.emptySlots.join(', ') : 'aucun';
   $('p-combats').textContent = fmt(S.combats || 0);
+  $('p-sched').textContent = !CFG.scheduleOn ? 'toujours actif' : `${hhmm(CFG.activeFrom)} -> ${hhmm(CFG.activeTo)}${S.status === 'repos' && S.resumeAt ? `, reprise ${hm(S.resumeAt)}` : ''}`;
+  $('p-rate').textContent = `${S.fightsHour ?? 0}${CFG.maxFightsPerHour ? ' / ' + CFG.maxFightsPerHour : ' (sans plafond)'}${S.status === 'plafond' && S.resumeAt ? `, reprise ${hm(S.resumeAt)}` : ''}`;
 
   // historique
   $('feed').innerHTML = st.feed.map(([t, m]) => {
@@ -656,11 +666,12 @@ function renderLog(lines, force) {
 /* ---------- reglages ---------- */
 function drawCfg(cfg) {
   $('cfg').innerHTML = Object.entries(CFG_META).map(([k, [l, help, lo, hi, step]]) =>
-    `<label>${l}<input id="cfg-${k}" type="number" inputmode="decimal" min="${lo}" max="${hi}" step="${step}" value="${cfg[k]}"><small>${help}</small></label>`).join('');
+    TIME_KEYS.has(k) ? `<label>${l}<input id="cfg-${k}" type="time" value="${hhmm(cfg[k])}"><small>${help}</small></label>`
+      : `<label>${l}<input id="cfg-${k}" type="number" inputmode="decimal" min="${lo}" max="${hi}" step="${step}" value="${cfg[k]}"><small>${help}</small></label>`).join('');
   cfgDrawn = true;
 }
 $('save').onclick = async () => {
-  const body = Object.fromEntries(Object.keys(CFG_META).map((k) => [k, $('cfg-' + k).value]));
+  const body = Object.fromEntries(Object.keys(CFG_META).map((k) => { const v = $('cfg-' + k).value; return [k, TIME_KEYS.has(k) ? (([h, m]) => h * 60 + m)(v.split(':').map(Number)) : v]; }));
   const r = await fetch('/api/config', { method: 'POST', body: JSON.stringify(body) }).catch(() => null);
   if (r?.ok) { drawCfg(await r.json()); $('cfgMsg').innerHTML = `<span class="c-ok">enregistre a ${hm(Date.now())}</span>`; }
   else $('cfgMsg').innerHTML = '<span class="c-bad">echec, bot hors ligne ?</span>';

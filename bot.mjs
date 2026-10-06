@@ -16,7 +16,8 @@ const decide = (m) => {
   else { S.decisions.unshift({ t: Date.now(), m, n: 1 }); S.decisions.length = Math.min(S.decisions.length, 60); }
   push();
 };
-const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100] }; // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600] }; // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 const log = (line) => { const l = `${new Date().toISOString()} ${line}`; console.log(l); appendFileSync('bot.log', l + '\n'); push(); };
 // temps reel : chaque client du tableau de bord garde un flux SSE ouvert ; push() regroupe les envois (max ~5/s)
@@ -54,6 +55,9 @@ try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch 
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
 const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'zone', 'aventure', 'f5'];
+// horaires en minutes depuis minuit ; une plage peut passer minuit (ex. 540 -> 60 = 09:00 -> 01:00)
+const inWindow = (m, a, b) => a === b || (a < b ? m >= a && m < b : m >= a || m < b);
+const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const safe = (name, p) => p.catch((e) => log(`ERREUR ${name} ` + e.message.split('\n')[0] + ' | ' + (e.message.match(/waiting for (.+)/)?.[1] ?? '').slice(0, 160))); // + l'element vise
 
 // Poids des stats pour comparer un objet a celui porte. Reglage : adapte Force/Intelligence/Chance/Agilite a ton element.
@@ -487,6 +491,7 @@ if (process.argv[2] === 'test') {
   assert.ok(invScore(KW) > 0); // deck Terre : +30 Force vaut le coup
   assert.ok(invScore('X\nNiveau 41\n+20 Vitalité\n+30 Force\n\nExemplaires : 1') > 0); // slot libre
   ELEM_SHARE = { Neutre: 0, Terre: 0.25, Feu: 0, Eau: 0.75, Air: 0 }; assert.equal(mainStat(), 'Chance');
+  assert.ok(inWindow(600, 540, 60) && inWindow(30, 540, 60) && !inWindow(120, 540, 60) && inWindow(600, 540, 1200) && !inWindow(1300, 540, 1200));
   const PD = parseDetail('Initiative\n2\n4\nFUSION\n2\n★\nClique sur un objet\n★\nAnneau Zest\nRARE\nAnneau\nNiveau 70\n+30 Vitalité\n+20 Chance\n\nExemplaires : 2 · revente 900 K\n\nÉquiper à la place de Bague de Boufbowl\nComparé à Bague de Boufbowl\n+10 Vitalité\n-5 Chance\nFusionner 3');
   assert.deepEqual([PD.name, PD.fav, PD.rarity, PD.slot, PD.level, PD.cmp], ['Anneau Zest', true, 'RARE', 'Anneau', 70, 'Bague de Boufbowl']);
   assert.ok(sameSlot('Trophée', 'Dofus / Trophée') && !sameSlot('Anneau', 'Chapeau'));
@@ -575,6 +580,29 @@ function startDashboard(page) {
   }).listen(7777, '127.0.0.1');
 }
 
+// Plage horaire (CFG.scheduleOn, activeFrom -> activeTo, peut passer minuit) et plafond de combats par heure glissante.
+// Hors plage ou plafond atteint : le bot attend sur l'ecran de fin, sans aucune requete, et reprend seul.
+async function gate() {
+  let said = '';
+  for (;;) {
+    const d = new Date(), mins = d.getHours() * 60 + d.getMinutes();
+    fightTimes = fightTimes.filter((t) => Date.now() - t < 3600000);
+    S.fightsHour = fightTimes.length;
+    const off = CFG.scheduleOn && !inWindow(mins, CFG.activeFrom, CFG.activeTo);
+    const capped = CFG.maxFightsPerHour > 0 && fightTimes.length >= CFG.maxFightsPerHour;
+    if (!off && !capped) { S.resumeAt = null; if (said) decide('Reprise : dans la plage horaire et sous le plafond'); return; }
+    if (off) {
+      const wait = ((CFG.activeFrom - mins + 1440) % 1440) * 60000;
+      S.status = 'repos'; S.resumeAt = Date.now() + wait;
+      if (said !== 'off') { decide(`Hors plage horaire (${hhmm(CFG.activeFrom)} -> ${hhmm(CFG.activeTo)}) : arret jusqu'a ${hhmm(CFG.activeFrom)}`); log(`REPOS jusqu'a ${hhmm(CFG.activeFrom)}`); said = 'off'; }
+    } else {
+      S.status = 'plafond'; S.resumeAt = fightTimes[0] + 3600000;
+      if (said !== 'cap') { decide(`Plafond atteint : ${fightTimes.length} combats sur la derniere heure (max ${CFG.maxFightsPerHour}), reprise vers ${new Date(S.resumeAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`); log(`PLAFOND ${fightTimes.length}/h`); said = 'cap'; }
+    }
+    push();
+    await sleep(15000);
+  }
+}
 // Coffres d'abord (nouveaux objets/cartes), puis deck, stuff, caracs ; au demarrage et tous les CFG.passEvery combats
 async function managePass(page) {
   S.status = 'gestion';
@@ -622,6 +650,7 @@ await managePass(page);
 let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastText = '', combats = 0;
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
+let fightTimes = []; // fins de combat de la derniere heure (plafond)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
   coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss,
@@ -667,6 +696,7 @@ while (true) {
     const num = (s) => s.replace(/\D/g, '');
     const g = text.match(/\+([\d\s]+?) XP\s*\+([\d\s]+?) kamas/);
     S.combats = combats;
+    fightTimes.push(Date.now());
     log(`${fight ? fight.toUpperCase() + ' ' : ''}${win ? 'VICTOIRE' : 'DEFAITE'} ${g ? `+${num(g[1])} XP +${num(g[2])} kamas` : 'gains=0'}`);
     const zl = await page.getByRole('link', { name: 'Autres groupes de la zone' }).getAttribute('href', { timeout: 1000 }).catch(() => null);
     if (zl?.startsWith('/chasse?zone=')) zone = zl;
@@ -695,6 +725,8 @@ while (true) {
     }
     }
     autoClicked = false; idleSince = Date.now();
+    await gate(); // plage horaire + plafond de combats/heure, avant de lancer quoi que ce soit
+    idleSince = Date.now();
 
     // actions demandees depuis le tableau de bord, executees ici entre deux combats
     let started = false;
