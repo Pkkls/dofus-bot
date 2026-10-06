@@ -555,6 +555,7 @@ const CFG_META = {
   hardEvery: ['XP hard automatique', 'relance la recherche de limite tous les N niveaux, 0 = jamais', 0, 200, 1],
   stuckSec: ['Page figee apres', 'secondes sans changement avant F5 / deblocage', 5, 120, 1],
   wisShare: ['Part de Sagesse', 'des points de caracs (XP), ajustee au danger, 0 au niveau 200', 0, 1, 0.05],
+  abyssDaily: ['Abysses quotidiennes', '1 = une descente par jour (coffres de palier), 0 = jamais', 0, 1, 1],
   manualFight: ['Combat manuel', '1 = le moteur du bot joue les cartes, 0 = mode Auto du jeu', 0, 1, 1],
   energyResume: ['Energie de reprise', 'apres la reserve, la chasse reprend a ce niveau (1 point / 6 min)', 1, 1000, 1],
 };
@@ -569,6 +570,7 @@ const ACTS = {
   boss: ['Boss', 'crown', 'tenter maintenant'],
   forge: ['Forge', 'sparkles', 'ameliorer le bouclier'],
   energie: ['Energie max', 'zap', 'acheter le plein, 300 K le point'],
+  abysses: ['Abysses', 'flag', 'descente roguelike (20 energie)'],
   spots: ['Spots XP', 'map', 'mesurer les zones et garder la meilleure'],
   site: ['Releve du site', 'monitor', 'nouveaux onglets et boutons'],
   xphard: ['XP hard', 'swords', 'monter jusqu\'a la defaite puis s\'adapter'],
@@ -826,7 +828,7 @@ function render(d) {
 }
 
 /* ---------- historique : onglets + filtres ---------- */
-const FILTERS = { tout: null, combats: /VICTOIRE|DEFAITE/, gestion: /EQUIPE|VENDU|BRISE|FORGE|COFFRE|DECK|CARAC|FUSION|HDV|CONFIG/, alertes: /ERREUR|BLOQUE|DEBLOCAGE|PRESENCE|429|EXPIREE|TROP|ENERGIE|INDICE/ };
+const FILTERS = { tout: null, combats: /VICTOIRE|DEFAITE/, gestion: /EQUIPE|VENDU|BRISE|FORGE|ABYSSES|COFFRE|DECK|CARAC|FUSION|HDV|CONFIG/, alertes: /ERREUR|BLOQUE|DEBLOCAGE|PRESENCE|429|EXPIREE|TROP|ENERGIE|INDICE/ };
 $('filters').innerHTML = Object.keys(FILTERS).map((k) => `<button type="button" data-f="${k}" aria-pressed="${k === filter}">${k}</button>`).join('');
 $('filters').onclick = (e) => {
   const f = e.target.closest('button')?.dataset.f;

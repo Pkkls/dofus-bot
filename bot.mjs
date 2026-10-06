@@ -18,7 +18,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMinSec: [90, 0, 570], breakMaxSec: [480, 0, 570], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], hardEvery: [10, 0, 200], wisShare: [0.3, 0, 1], stuckSec: [15, 5, 120], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMinSec: [90, 0, 570], breakMaxSec: [480, 0, 570], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], abyssDaily: [1, 0, 1], hardEvery: [10, 0, 200], wisShare: [0.3, 0, 1], stuckSec: [15, 5, 120], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -70,11 +70,11 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
-const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'spots', 'site', 'xphard', 'entrainement', 'zone', 'aventure', 'f5'];
+const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'abysses', 'spots', 'site', 'xphard', 'entrainement', 'zone', 'aventure', 'f5'];
 // horaires en minutes depuis minuit ; une plage peut passer minuit (ex. 540 -> 60 = 09:00 -> 01:00)
 const inWindow = (m, a, b) => a === b || (a < b ? m >= a && m < b : m >= a || m < b);
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -1376,6 +1376,51 @@ async function unblock(page, text) {
   else await page.locator('button:visible, a:visible').filter({ hasText: act }).first().click({ timeout: 5000 }).catch(() => {});
   unblockPending.at = Date.now();
 }
+// Abysses (roguelike, 20 energie la descente, pas de mode Auto) : descente, choix de sort / carte bonus, etage suivant.
+// Chaque ecran inconnu est capture (dump/abysses-N.txt) pour affiner les choix ; jamais de choix pendant un combat (playTurn s'en charge).
+async function startAbyss(page) {
+  await page.goto(BASE + '/abysses').catch(() => {});
+  const go = page.locator('main').locator('button', { hasText: /^\s*Descendre/ }).first();
+  if (!(await go.waitFor({ state: 'visible', timeout: 15000 }).then(() => true, () => false))) { decide('Abysses : bouton Descendre introuvable'); return false; }
+  const have = +((await page.locator('main').innerText()).match(/tu en as (\d+)/)?.[1] ?? 0);
+  if (have < 20 + CFG.energyReserve) { decide(`Abysses : ${have} energie, il en faut 20 (+ reserve ${CFG.energyReserve})`); return false; }
+  page.once('dialog', (dg) => dg.accept().catch(() => {}));
+  await go.click();
+  S.last.abysses = Date.now(); S.abyssRun = { start: Date.now(), floors: 0 };
+  decide('Abysses : descente lancee (20 energie), choix et combats en manuel');
+  log('ABYSSES descente lancee');
+  return true;
+}
+async function abyssChoice(page, text) {
+  const inRun = S.abyssRun && Date.now() - S.abyssRun.start < 3 * 3600000;
+  if (!/\/abysses/i.test(page.url()) && !(inRun && /carte bonus|Choisis|choisir|nouveau sort|Étage \d+/i.test(text))) return false; // le menu contient "Abysses" sur toutes les pages
+  if (/À toi de jouer|Tour de /.test(text)) return false; // combat : playTurn s'en charge
+  const btns = page.locator('main').locator('button:visible');
+  const items = await btns.evaluateAll((els) => els.map((e, i) => ({ i, raw: e.innerText, t: e.innerText.replace(/\s+/g, ' ').trim(), dis: e.disabled }))).catch(() => []);
+  const mainTxt = await page.locator('main').innerText().catch(() => text);
+  const sig = screenSig(page.url(), mainTxt);
+  if (!(S.abyssSeen ??= []).includes(sig)) {
+    S.abyssSeen.push(sig);
+    writeFileSync(`dump/abysses-${S.abyssSeen.length}.txt`, `${page.url()}\n${sig}\n\n${mainTxt.slice(0, 5000)}\n\n=== BOUTONS\n${items.map((x) => (x.dis ? '[off] ' : '') + x.t).join('\n')}`);
+    log(`ABYSSES nouvel ecran capture : ${sig}`);
+  }
+  const value = (x) => (/L[ée]gendaire/i.test(x.t) ? 100 : 0) + (/\bPA\b/.test(x.t) ? 60 : 0) + (/\bPM\b/.test(x.t) ? 30 : 0) + (/[ÉE]pique/i.test(x.t) ? 40 : 0) + (/\bRare\b/i.test(x.t) ? 10 : 0)
+    + cardFx(x.raw.split('\n')).dmg.reduce((a, d) => a + d.avg * (d.zone ? 1.3 : 1) * (d.steal ? 1.1 : 1), 0) / Math.max(1, +(x.t.match(/^(\d+)\s/)?.[1] ?? 1));
+  const cands = items.filter((x) => !x.dis && x.t.length > 12 && !/Fuir|Auto|Fin du tour|Déconnexion|Descendre|Classement|Ouvrir|Équiper|Vendre|Briser|Fusionner|Acheter|Retour/i.test(x.t) && /L[ée]gendaire|[ÉE]pique|\bRare\b|dommages|vol de vie|Soigne|Bouclier|\+\d+/i.test(x.t));
+  if (cands.length >= 2) { // ecran de choix (sort ou carte bonus)
+    const best = [...cands].sort((a, b) => value(b) - value(a))[0];
+    decide(`Abysses : je choisis "${best.t.slice(0, 70)}" parmi ${cands.length} (rarete, PA/PM, degats)`);
+    log(`ABYSSES choix ${best.t.slice(0, 70)}`);
+    await btns.nth(best.i).click({ timeout: 5000 }).catch(() => {});
+    await sleep(800);
+    const ok = page.getByRole('button', { name: /^(Valider|Confirmer|Choisir|Prendre)/ }).first();
+    if (await ok.isVisible().catch(() => false)) await ok.click().catch(() => {});
+    return true;
+  }
+  const next = page.locator('main').locator('button, a').filter({ hasText: /^\s*(Étage suivant|Continuer la descente|Plonger|Étage \d+)/ }).first();
+  if (await next.isVisible().catch(() => false)) { await next.click().catch(() => {}); log('ABYSSES etage suivant'); return true; }
+  return false;
+}
 // Actions du tableau de bord : executees des que le bot n'est pas en plein combat ; resultat garde par bouton (S.actRes)
 async function runActions(page) {
   let started = false;
@@ -1388,7 +1433,7 @@ async function runActions(page) {
     let r, err = null;
     try { r = a === 'gestion' ? await managePass(page) : await ACTIONS[a](page); } catch (e) { err = e.message.split('\n')[0]; log(`ERREUR action ${a} : ${err}`); }
     if (r === true && (a === 'boss' || a === 'arene')) { fight = a; if (a === 'boss') lastBoss = Date.now(); }
-    started = r === true && ['boss', 'arene', 'zone', 'aventure'].includes(a);
+    started = r === true && ['boss', 'arene', 'zone', 'aventure', 'abysses'].includes(a);
     const planned = ['spots', 'xphard', 'entrainement', 'site'].includes(a); // actions qui programment une tache plutot que lancer un combat
     (S.actRes ??= {})[a] = { t: Date.now(), r: err ? 'echec' : started ? 'combat lance' : planned ? 'programme' : r === false ? 'rien a faire' : 'fait', err };
   }
@@ -1402,7 +1447,7 @@ let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
-  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
+  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, abysses: startAbyss, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
   aventure: async (p) => { huntLeft = 0; S.advBlockedUntil = 0; xpHard = false; S.xpHard = false; return goAdventure(p); }, // l'aventure reste ensuite prioritaire (wantAdventure)
 };
@@ -1520,6 +1565,8 @@ while (true) {
     continue;
   }
 
+  // Abysses : ecran de choix ou d'etage (jamais pendant un combat)
+  if (await abyssChoice(page, text)) { autoClicked = false; idleSince = Date.now(); await sleep(1200); continue; }
   const next = page.getByRole('button', { name: 'Suivant en auto' });
   // boutons OU liens de fin de combat ("Retour a l'arene" est un lien) : sinon, apres un redemarrage, l'ecran de fin n'est pas reconnu
   const endBtn = page.locator('main').locator('button, a').filter({ hasText: /^\s*(Suivant en auto|Refaire ce combat|Étape suivante|Réessayer en auto|Réessayer l.étape|Retour.*|Continuer|Chasse libre|Autres groupes de la zone)\s*$/ });
@@ -1527,7 +1574,8 @@ while (true) {
   if (/Victoire !|Défaite/.test(text) && !/À toi de jouer/.test(text) && (fight || await endBtn.first().isVisible().catch(() => false))) { // boss/arene : ecran de fin peut-etre sans bouton connu
     if (!endHandled) {
     endHandled = true;
-    if (!fight && /Retour à l.arène/.test(text)) fight = 'arene'; // apres un redemarrage, l'ecran de fin dit si c'etait l'arene
+    if (!fight && /Retour à l.arène/.test(text)) fight = 'arene';
+    if (!fight && (/\/abysses/i.test(page.url()) || (S.abyssRun && Date.now() - S.abyssRun.start < 3 * 3600000 && /Étage \d+/i.test(text)))) fight = 'abysses'; // hors stats de chasse (le menu contient "Abysses" partout) // apres un redemarrage, l'ecran de fin dit si c'etait l'arene
     paced = false; throwChecked = false; unblockTried.clear();
     if (++combats % CFG.passEvery === 0) deckDue = true;
     const win = /Victoire !/.test(text) && !/Défaite/.test(text);
@@ -1609,6 +1657,7 @@ while (true) {
     if (fightMem.profile) { rewardProfile(fightMem.profile, win, fightMem.turn); const p = S.learn.prof[fightMem.profile]; decide(`Style ${fightMem.profile} : ${win ? 'victoire' : 'defaite'} en ${fightMem.turn} tours (${p.w}/${p.n} gagnes)`); fightMem = { turn: 0, endHp: null, inc: 0, profile: null }; }
     if (fight === 'boss') S.boss = { ...S.boss, live: false, last: win ? 'victoire' : 'defaite' };
     if (fight === 'arene') S.arena = { ...S.arena, last: win ? 'victoire' : 'defaite' };
+    if (fight === 'abysses') { if (win && S.abyssRun) S.abyssRun.floors++; else if (!win) { log(`ABYSSES fin de descente (${S.abyssRun?.floors ?? '?'} etages)`); decide(`Abysses : descente terminee apres ${S.abyssRun?.floors ?? '?'} etages`); (S.learn ??= {}).abyssBest = Math.max(S.learn.abyssBest ?? 0, S.abyssRun?.floors ?? 0); S.abyssRun = null; } }
     if (fight === 'arene' && !win && S.arenaFoe) { ((S.learn ??= {}).arenaAvoid ??= {})[S.arenaFoe] = { lvl: S.level, deck: deckKey() }; decide(`Arene : ${S.arenaFoe} m'a battu ou bloque, je l'evite jusqu'a +3 niveaux ou un nouveau deck`); }
     S.mode = fight ?? (adventure ? 'aventure' : 'chasse');
     fight = null;
@@ -1698,6 +1747,9 @@ while (true) {
       xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0;
       decide(`XP hard automatique : ${S.learn?.hard?.n ? `${S.level - S.learn.hard.lvl} niveaux depuis la derniere mesure` : 'limite jamais mesuree'}, je recherche ma limite`);
       log('XP HARD demarre (auto)');
+    }
+    if (CFG.abyssDaily && CFG.manualFight && !xpHard && new Date(S.last.abysses ?? 0).toDateString() !== new Date().toDateString() && (energyNow() ?? 0) >= 20 + CFG.energyReserve && !S.queue.includes('abysses')) {
+      S.queue.push('abysses'); decide('Abysses : descente du jour programmee');
     }
     if (siteScanDue) { siteScanDue = S.siteScanPending = false; await safe('site', siteScan(page)); await page.goto(COMBAT).catch(() => {}); continue; }
     if (trainLeft > 0 && CFG.manualFight) {
