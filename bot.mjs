@@ -18,7 +18,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMin: [2, 0, 9], breakMax: [8, 0, 9], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMin: [2, 0, 9], breakMax: [8, 0, 9], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], hardEvery: [10, 0, 200], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -70,7 +70,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -679,6 +679,7 @@ async function climbZone(page, cur, dir, why) {
     const next = [...z].sort((a, b) => a[3] - b[3]).find(([, , , mn]) => mn >= target) ?? [...z].sort((a, b) => b[3] - a[3])[0];
     decide(`XP hard : ${next[2]} (monstres niv ${next[3]}-${next[1]}, cible plancher ${target}, moi ${S.level})`);
     log(`ZONE montee XP hard ${next[2]} niv ${next[3]}-${next[1]}`);
+    (S.xpHardLog ??= []).unshift({ t: Date.now(), name: next[2], href: next[0], min: next[3], max: next[1], lvl: S.level, res: null }); S.xpHardLog.length = Math.min(S.xpHardLog.length, 30);
     return next[0];
   }
   const curMax = z.find(([h]) => h === cur)?.[1] ?? S.level;
@@ -1224,7 +1225,7 @@ async function unblock(page, text) {
   else await page.locator('button:visible, a:visible').filter({ hasText: act }).first().click({ timeout: 5000 }).catch(() => {});
   unblockPending.at = Date.now();
 }
-let xpHard = false, xpHardWins = 0, zoneCheck = 0;
+let xpHard = false, xpHardWins = 0, xpHardLastWin = null, zoneCheck = 0;
 const grpRank = () => (xpHard ? 3 : strikes ? 0 : CFG.maxGroup);
 let paced = false, throwChecked = false; // rythme : ecart deja fait sur cet ecran de fin ; abandon deja tire pour ce combat
 let trainLeft = 0, trainZone = null, climbStreak = 0, climbDir = 0, climbHist = [], lastLevel = 0; // entrainement demande depuis le tableau de bord
@@ -1332,8 +1333,19 @@ while (true) {
       results.push(win); if (results.length > 10) results.shift(); winsSinceStrike = win ? winsSinceStrike + 1 : 0;
       // vise targetWin (pas 100 %) : sur les 20 derniers, au-dessus on monte, sous la cible -10 pts on redescend ; climbWins combats mini entre deux changements
       if (xpHard) {
-        if (win) { climbDir = 1; xpHardWins++; }
-        else { climbDir = -1; xpHard = false; S.xpHard = false; climbHist = []; climbStreak = 0; decide('XP hard : premiere defaite, je redescends d\'un palier et je reprends la montee normale (taux vise)'); log('XP HARD termine - defaite, palier precedent'); }
+        const jump = S.xpHardLog?.[0];
+        if (jump && !jump.res && jump.href === zone) jump.res = win ? 'V' : 'D';
+        if (win) { climbDir = 1; xpHardWins++; if (jump?.href === zone) xpHardLastWin = jump; }
+        else {
+          xpHard = false; S.xpHard = false; climbHist = []; climbStreak = 0; climbDir = 0;
+          const H = ((S.learn ??= {}).hard ??= { offset: 0, n: 0, lvl: 0 });
+          if (xpHardLastWin) { const off = xpHardLastWin.min - S.level; H.offset = H.n ? 0.6 * H.offset + 0.4 * off : off; zone = xpHardLastWin.href; }
+          H.n++; H.lvl = S.level;
+          decide(`XP hard : defaite. Limite ${xpHardLastWin ? `= monstres niv ${xpHardLastWin.min}+ (moi ${S.level}, ecart ${xpHardLastWin.min - S.level})` : 'sous la 1re zone'} ; limite apprise ${Math.round(H.offset)} niveaux au-dessus de moi. Retour a ${xpHardLastWin?.name ?? 'la zone precedente'}`);
+          log(`XP HARD termine - defaite, limite apprise ${Math.round(H.offset)}`);
+          if (!xpHardLastWin) climbDir = -1;
+          xpHardLastWin = null;
+        }
       } else if (CFG.climbWins) {
         climbHist.push(win); if (climbHist.length > 20) climbHist.shift();
         const rate = climbHist.filter(Boolean).length / climbHist.length;
@@ -1457,6 +1469,11 @@ while (true) {
         log(`ZONE meilleure XP/min ${best[0]} (${Math.round(best[1].xpm)} vs ${Math.round(cur.xpm)})`);
         zone = best[0]; climbHist = []; climbStreak = 0;
       }
+    }
+    if (CFG.hardEvery && CFG.manualFight && !xpHard && zone && !adventure && !S.recharging && S.level - (S.learn?.hard?.lvl ?? 0) >= CFG.hardEvery) {
+      xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0;
+      decide(`XP hard automatique : ${S.learn?.hard?.n ? `${S.level - S.learn.hard.lvl} niveaux depuis la derniere mesure` : 'limite jamais mesuree'}, je recherche ma limite`);
+      log('XP HARD demarre (auto)');
     }
     if (siteScanDue) { siteScanDue = false; await safe('site', siteScan(page)); await page.goto(COMBAT).catch(() => {}); continue; }
     if (trainLeft > 0 && CFG.manualFight) {

@@ -347,6 +347,7 @@ details[open].card > summary .chev { transform: rotate(180deg); }
           <dt>Rythme</dt><dd id="m-pace">-</dd>
           <dt>HDV</dt><dd id="m-hdv">-</dd>
           <dt>Forge</dt><dd id="m-forge">-</dd>
+          <dt>XP hard</dt><dd id="m-hard">-</dd>
           <dt>Build</dt><dd id="m-build">-</dd>
           <dt>Meilleures zones (XP/min)</dt><dd id="m-zones">-</dd>
         </dl>
@@ -354,6 +355,8 @@ details[open].card > summary .chev { transform: rotate(180deg); }
           <div class="cards" id="m-prof"></div>
           <div class="muted" style="margin:12px 0 6px">Correctif de degats appris (reel / prevu)</div>
           <div class="elegend" id="m-k"></div>
+          <div class="muted" style="margin:12px 0 6px">Sauts XP hard (recents)</div>
+          <div class="cards" id="m-jumps"></div>
           <div class="muted" style="margin:12px 0 6px">Indices de defaite connus</div>
           <div id="m-hints" class="muted">aucun</div>
         </div>
@@ -475,6 +478,7 @@ const CFG_META = {
   breakMax: ['Pause maxi', 'minutes (< 10, sinon la place est liberee)', 0, 9, 1],
   loseRate: ['Defaites volontaires', 'part des combats de chasse fuis au tour 1 (0.05 = 5 %)', 0, 0.5, 0.01],
   breakJunk: ['Briser au lieu de vendre', '1 = objets inutiles brises en orbes de forge, vendus seulement si les kamas manquent pour l\'energie', 0, 1, 1],
+  hardEvery: ['XP hard automatique', 'relance la recherche de limite tous les N niveaux, 0 = jamais', 0, 200, 1],
   manualFight: ['Combat manuel', '1 = le moteur du bot joue les cartes, 0 = mode Auto du jeu', 0, 1, 1],
   energyResume: ['Energie de reprise', 'apres la reserve, la chasse reprend a ce niveau (1 point / 6 min)', 1, 1000, 1],
 };
@@ -652,6 +656,9 @@ function render(d) {
   $('m-hdv').textContent = S.hdvBrokenUntil > now ? `achat en panne cote site, essai vers ${hm(S.hdvBrokenUntil)}` : 'actif';
   const F = S.forge, LF = L.forge;
   $('m-forge').textContent = F ? `bouclier niv ${F.level} (+${F.bonus} %), ${F.orbs} orbes, quota ${Number.isFinite(F.left) ? F.left : '?'}${LF?.broken ? `, ${LF.broken} brises (+${LF.orbsGained})` : ''}${LF?.tries ? `, reussite ${LF.ok}/${LF.tries}` : ''}` : 'pas encore visitee';
+  const H = L.hard;
+  $('m-hard').textContent = `${S.xpHard ? 'en cours' : 'au repos'}${H?.n ? `, limite apprise +${Math.round(H.offset)} niv (mesuree niv ${H.lvl}, ${H.n} fois)` : ', limite pas encore mesuree'}${CFG.hardEvery ? `, relance tous les ${CFG.hardEvery} niv` : ''}`;
+  $('m-jumps').innerHTML = (S.xpHardLog ?? []).slice(0, 8).map((j) => `<div class="cardx"><span class="cost">${j.res ?? '…'}</span><span class="n">${esc(j.name)} <span class="muted">· monstres ${j.min}-${j.max}, moi ${j.lvl}</span></span><span class="m num">${hm(j.t)}</span></div>`).join('') || '<div class="empty" style="padding:0">Aucun saut pour l\'instant.</div>';
   const B = L.build;
   $('m-build').textContent = B?.n ? `PV mini moyens ${pct(B.minHp)}, defaites ${pct(B.loss)} sur ${B.n} combats` : 'en cours d\'apprentissage';
   const zs = Object.entries(L.zones ?? {}).filter(([, z]) => z.n >= 3).sort((a, z) => z[1].xpm - a[1].xpm).slice(0, 3);
