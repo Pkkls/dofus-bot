@@ -478,13 +478,15 @@ const PROFILES = {
   equilibre: { heal: [2.5, 1.2, 0.3], shield: 1.2, kill: 3 },
   agressif: { heal: [1.5, 0.6, 0.1], shield: 0.6, kill: 4 },
   prudent: { heal: [3.5, 2, 0.6], shield: 1.6, kill: 2 },
+  antipat: { heal: [1.2, 0.1, 0], shield: 0.1, kill: 6 }, // pas choisi par UCB : impose quand le combat tourne en rond
 };
+const STYLES = ['equilibre', 'agressif', 'prudent']; // styles explores par UCB (antipat est impose, pas choisi)
 const pickProfile = () => {
   const L = (S.learn ??= {}).prof ??= {};
   const n = Object.values(L).reduce((a, p) => a + p.n, 0);
   const T = S.learn.train ?? {};
   const surv = (k) => (T[k]?.n ? T[k].r / T[k].n : 0.5); // survie moyenne en entrainement, 0.5 si inconnue
-  return Object.keys(PROFILES).map((k) => [k, L[k]?.n ? L[k].r / L[k].n + Math.sqrt((2 * Math.log(n + 1)) / L[k].n) + 0.3 * surv(k) : Infinity]).sort((a, b) => b[1] - a[1])[0][0];
+  return STYLES.map((k) => [k, L[k]?.n ? L[k].r / L[k].n + Math.sqrt((2 * Math.log(n + 1)) / L[k].n) + 0.3 * surv(k) : Infinity]).sort((a, b) => b[1] - a[1])[0][0];
 };
 // entrainement (combats perdus d'avance) : recompense = tours tenus (sur 10) et part des PV ennemis infligee
 const rewardTrain = (k, turns, dmgFrac) => { const p = ((S.learn ??= {}).train ??= {})[k] ??= { n: 0, r: 0, turns: 0 }; p.n++; p.turns += turns; p.r += 0.5 * Math.min(turns, 10) / 10 + 0.5 * dmgFrac; };
@@ -492,7 +494,7 @@ const rewardTrain = (k, turns, dmgFrac) => { const p = ((S.learn ??= {}).train ?
 const pickTrainProfile = () => {
   const T = (S.learn ??= {}).train ??= {};
   const n = Object.values(T).reduce((a, p) => a + p.n, 0);
-  return Object.keys(PROFILES).map((k) => [k, T[k]?.n ? T[k].r / T[k].n + Math.sqrt((2 * Math.log(n + 1)) / T[k].n) : Infinity]).sort((a, b) => b[1] - a[1])[0][0];
+  return STYLES.map((k) => [k, T[k]?.n ? T[k].r / T[k].n + Math.sqrt((2 * Math.log(n + 1)) / T[k].n) : Infinity]).sort((a, b) => b[1] - a[1])[0][0];
 };
 const rewardProfile = (k, win, turns) => { const p = ((S.learn ??= {}).prof ??= {})[k] ??= { n: 0, r: 0, w: 0 }; p.n++; p.w += win ? 1 : 0; p.r += win ? 1 - Math.min(turns, 20) / 40 : 0; };
 // valeur d'un plan (cartes jouees ce tour) avec un focus pour les cartes mono-cible
@@ -591,7 +593,16 @@ async function playTurn(page) {
   if (ruled.length && !fightMem.ruleSaid) { fightMem.ruleSaid = true; decide(`Mecanique ${ruled.join(', ')} (indice) : j'alterne les elements, jamais deux fois le meme de suite`); }
   fightMem.turn = st.turn;
   S.fightNow = { profile: fightMem.profile, turn: st.turn, foes: st.enemies.filter((e) => e.hp > 0).map((e) => e.name), at: Date.now() }; // tableau de bord
-  const P = PROFILES[fightMem.profile];
+  // pat (soins/boucliers des deux cotes) : des le tour 8, PV+protection ennemis baisses de moins de 5 % en 4 tours -> tout aux degats
+  const ehpNow = st.enemies.reduce((a, e) => a + e.hp + e.prot, 0);
+  if (fightMem.ehpTurn !== st.turn) { (fightMem.ehpHist ??= []).push(ehpNow); fightMem.ehpTurn = st.turn; }
+  const hist = fightMem.ehpHist ?? [];
+  if (!fightMem.stall && st.turn >= 8 && hist.length >= 5 && ehpNow > 0.95 * hist[hist.length - 5]) {
+    fightMem.stall = true;
+    decide(`Pat detecte au tour ${st.turn} (PV ennemis ${Math.round(ehpNow)}, il y a 4 tours ${Math.round(hist[hist.length - 5])}) : je passe tout aux degats concentres`);
+    log(`COMBAT pat tour ${st.turn} - style anti-pat`);
+  }
+  const P = fightMem.stall ? PROFILES.antipat : PROFILES[fightMem.profile];
   if (fightMem.incTurn !== st.turn) { // une seule estimation par tour, meme si le tour est joue en plusieurs appels
     const lost = fightMem.endHp == null ? 0 : Math.max(0, fightMem.endHp - (st.hp + st.shield));
     const alive0 = st.enemies.filter((e) => e.hp > 0).length;
