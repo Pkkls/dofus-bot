@@ -70,7 +70,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -936,6 +936,7 @@ async function hdvBuy(page) {
 
 if (process.argv[2] === 'test') {
   const assert = (await import('node:assert')).strict;
+  S.learn = {}; S.level = 100; S.zone = null; // tests independants de ce que le bot a appris (state.json)
   const AR = parseArena('TON ELO\n985\nNIVEAU D’OPTI\n2 302\nadversaires\nCLASSEMENT\n#6145\nVICTOIRES / DÉFAITES\n0 / 1\nDeck\nPawmi\nEcaflip niveau 91 · Elo 1001 · opti 2 486 · 1V / 1D\nDéfier\nPad\nFéca niveau 71 · Elo 978 · opti 2 036 · 4V / 6D\nDéfier\nChaque défi coûte 2 points d’énergie (tu en as 148).');
   assert.deepEqual([AR.elo, AR.opti, AR.rank, AR.energy, AR.opp.length, AR.opp[1].name, AR.opp[1].opti], [985, 2302, '6145', 148, 2, 'Pad', 2036]);
   const HR = parseHdvRows('\nFiltrer\nYugoufle\nNiveau 41 · vendu par Hadu\n300 K\nAcheter\n★\nKompost · Rayonnant\nNiveau 60 · vendu par Ouateu\n1 500 K\nTrop cher');
@@ -1290,7 +1291,23 @@ await managePass(page);
 
 let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastText = '', combats = 0;
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
-let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
+let endHandled = false, deckDue = false, stuck = 0, huntLeft = S.huntLeft ?? 0, backToAdventure = false; // rattrapage garde entre redemarrages
+// Aventure prioritaire : hors rattrapage XP (apres une defaite d'aventure), XP hard et entrainement. Chemin bloque/fini -> chasse, nouvel essai 30 min apres
+const wantAdventure = () => huntLeft === 0 && !xpHard && trainLeft === 0 && Date.now() > (S.advBlockedUntil ?? 0);
+async function goAdventure(page) {
+  await page.goto(BASE + '/aventure').catch(() => {});
+  const b = page.locator('button', { hasText: ADV_FIGHT }).first();
+  if (!(await b.waitFor({ state: 'visible', timeout: 15000 }).then(() => true, () => false)) || !(await b.isEnabled().catch(() => false))) {
+    S.advBlockedUntil = Date.now() + 1800000;
+    decide('Aventure : aucune etape lancable (Chemin fini ou verrouille), je chasse et je reessaie dans 30 min');
+    log('AVENTURE indisponible - chasse, nouvel essai dans 30 min');
+    return false;
+  }
+  await b.click();
+  decide('Aventure : je lance l\'etape suivante du Chemin (prioritaire sur la chasse)');
+  log('AVENTURE - etape lancee');
+  return true;
+}
 let clickFails = [], myWaitSince = 0, satStreak = 0, inQueue = false; // clics expires recents (fenetre inconnue) ; debut d'un "Tour de moi..." fige
 // XP hard (bouton) : plus gros groupes, palier suivant a chaque victoire, 1re defaite -> un cran plus bas puis montee normale
 // Deblocage appris (S.learn.unblock[signature][action] = { ok, ko }) : page figee 30 s -> une action sure a la fois, la meilleure connue d'abord.
@@ -1390,6 +1407,7 @@ while (true) {
 
   // "Aucun combat en cours" (apres redemarrage, file d'attente, combat expire) : on relance un combat de chasse
   if (/Aucun combat en cours/i.test(text) && !/À toi de jouer/.test(text)) {
+    if (wantAdventure() && (await goAdventure(page))) { autoClicked = false; idleSince = Date.now(); continue; } // l'aventure d'abord
     zone ??= await pickZone(page, null, false).catch(() => null);
     decide(`Aucun combat en cours : je relance la chasse${zone ? ` (${zone.replace('/chasse?zone=', 'zone ')})` : ''}`);
     log('AUCUN combat - relance chasse');
@@ -1639,6 +1657,8 @@ while (true) {
     if (CFG.manualFight && await step.isVisible().catch(() => false)) { // "Suivant en auto" lancerait le combat en Auto
       decide('Combat suivant en manuel : Etape suivante');
       await step.click(); autoClicked = false; await sleep(3000);
+    } else if (CFG.manualFight && wantAdventure() && (await goAdventure(page))) {
+      // aventure prioritaire : etape lancee
     } else if (CFG.manualFight && zone) {
       await attackGroup(page, zone, grpRank());
     } else if (await next.isVisible().catch(() => false)) {
