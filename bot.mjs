@@ -1595,6 +1595,16 @@ async function rushPrestige(page) {
       page.once('dialog', (dg) => { log(`PRESTIGE dialogue : ${dg.message().slice(0, 150)}`); dg.accept().catch(() => {}); });
       const lbl = (await btn.innerText()).replace(/\s+/g, ' ').trim();
       await btn.click(); await sleep(1500);
+      // objet eternel a garder (P1 : Molosk) : on garde l'objet propose au meilleur score connu ; ecran inconnu -> capture, alerte, pas de confirmation
+      const after = await page.locator('body').innerText().catch(() => '');
+      if (/[ée]ternel|garder|conserver|choisis/i.test(after)) {
+        const opts = await page.locator('button:visible').evaluateAll((els) => els.map((e, i) => ({ i, t: e.innerText.replace(/\s+/g, ' ').trim(), alt: e.querySelector('img')?.alt?.trim() ?? '' }))).catch(() => []);
+        const pick = opts.map((o) => ({ ...o, sc: Math.max(...Object.entries(S.ownScore ?? {}).filter(([n]) => o.alt === n || o.t.includes(n)).map(([, s]) => s), -1) })).filter((o) => o.sc >= 0).sort((a, b) => b.sc - a.sc)[0];
+        writeFileSync('dump/prestige_choix.txt', `${after.slice(0, 6000)}\n\n=== BOUTONS\n${opts.map((o) => `${o.t} [${o.alt}]`).join('\n')}`);
+        if (!pick) { log('PRESTIGE choix d\'objet eternel non reconnu (dump/prestige_choix.txt) : je ne confirme pas'); alert('prestige : choix de l\'objet a garder non reconnu, voir dump/prestige_choix.txt'); rushNext = Date.now() + 1800000; return false; }
+        await page.locator('button:visible').nth(pick.i).click().catch(() => {}); await sleep(800);
+        log(`PRESTIGE objet eternel garde : ${pick.alt || pick.t.slice(0, 60)} (score ${pick.sc})`); decide(`Prestige : je garde ${pick.alt || pick.t.slice(0, 40)}, meilleur score connu parmi les objets proposes`);
+      }
       const ok = page.getByRole('button', { name: /^(Confirmer|Oui|Valider|Faire|Je confirme)/i }).first(); // confirmation eventuelle
       if (await ok.isVisible().catch(() => false)) await ok.click().catch(() => {});
       log(`PRESTIGE lance (${lbl}) : prestige ${S.prestige} -> ${S.prestige + 1}`); decide(`Rush prestige : niveau 200, je fais le prestige (${lbl})`);
