@@ -1,6 +1,6 @@
 # Handoff dofus-bot
 
-Etat au 2026-10-06. Bot Playwright qui joue seul a DofusMasters (https://dofusmasters.houk.fr, fan-site Next.js) sur le personnage Bernardarnault (Cra), avec un tableau de bord local en temps reel.
+Etat au 2026-10-06, 03h20 (heure de Paris). Bot Playwright qui joue seul a DofusMasters (https://dofusmasters.houk.fr, fan-site Next.js) sur le personnage Bernardarnault (Cra), avec un tableau de bord local en temps reel.
 
 ## Lancer
 
@@ -31,7 +31,7 @@ Le site affiche un test de presence ("Es-tu toujours la ? Clique sur le chiffre 
 | Coffres | Ouvre tout (gagnes + cadeaux), achete en gardant kamasReserve | gagnes verifies, cadeaux corriges le 06/10, a confirmer |
 | Deck | Garde les cartes utilitaires, complete par degats/PA selon les stats de /personnage | verifie |
 | Inventaire | Equipe le meilleur score par type, vend (2 clics) le moins bon Commun..Rare | verifie au kama pres |
-| Anneaux | Optimisation des 2 emplacements, reserve ringSpare, vente du reste | nouveau, a confirmer |
+| Anneaux | `optimizeRings` : decouverte du score de l'anneau 2, puis le meilleur du sac remplace le plus faible ; reserve ringSpare (niveau >= mon niveau - spareWindow), vente du reste | paire passee a 107 + 100 en reel ; boucle de permutation corrigee le 06/10, a reverifier |
 | Fusion | 3 exemplaires au moins aussi bons que la piece portee | debloque le 06/10, a confirmer |
 | HDV | Achat pour les emplacements vides uniquement | code, jamais declenche |
 | Caracs | Vitalite (vitShare) puis stat de l'element dominant du deck | verifie |
@@ -52,14 +52,22 @@ Le site affiche un test de presence ("Es-tu toujours la ? Clique sur le chiffre 
 - Hebergeur o2switch : HTTP 429 "Slow down" si trop de pages en rafale. Le bot fait une pause de 5 min. Pour explorer une page, arreter le bot (le profil est verrouille) et espacer les chargements.
 - Vente et fusion en 2 clics : le bouton devient "Confirmer (+X K)".
 - Grille d'inventaire : les objets en plusieurs exemplaires ont un badge ("2", "FUSION"). Selecteur `invItems()` et nom lu par `parseDetail()`, jamais "premiere ligne du texte".
+- Panneau de detail parfois perime apres un clic : toujours passer par `openItem()`, qui attend que le nom du panneau corresponde a l'image cliquee. Aucune vente ni equipement sans cette verification.
+- Emplacements portes : un badge de tiers peut s'ajouter au texte ("T2 Anneau"), d'ou la regex `/(^|\s)Anneau$/`. Si un anneau porte est illisible, `optimizeRings` ne touche a rien.
+- Le texte de l'image d'un objet = nom sans le tiers (`baseName`) : "Gelano" pour "Gelano · Tiers 2".
 - Anneaux : le jeu compare toujours a l'anneau 1, mais propose "Equiper a la place de X (Anneau 1|2)". Le score de l'anneau 2 se decouvre en y placant un anneau (l'ancien revient au sac).
 - Les clics de la sonde en headless n'ont parfois aucun effet sur l'inventaire ; le bot en fenetre visible fonctionne. Diagnostiquer dans le bot (decide/log) plutot qu'en headless.
 - Ne jamais editer `run.cmd` pendant qu'il tourne (cmd relit le .bat) : `Stop-ScheduledTask dofus-bot` d'abord.
 - `bot.log` reecrit sous Windows peut contenir des \r\n : le parseur les tolere.
 
+## En cours au moment du handoff
+
+- Le bot tourne (tache planifiee). Une passe d'inventaire avec les gardes `openItem` vient d'etre lancee : verifier dans bot.log qu'il n'y a plus de permutation d'anneaux en boucle ni de "ERREUR vente ... introuvable" en serie, et mesurer la duree de la passe (elle prenait jusqu'a 10 min avant l'optimisation de la fusion).
+- Coffres cadeaux : verifies (5 ouverts d'un coup le 06/10).
+
 ## A faire ensuite
 
-1. Confirmer en reel : coffres cadeaux, anneaux (decouverte de l'anneau 2 puis paire optimale), fusion.
+1. Confirmer en reel : anneaux sans boucle, fusion (badge FUSION), duree de la passe d'inventaire.
 2. HDV : vente des objets Epique+ inutiles et achat d'ameliorations pour emplacements occupes (l'HDV ne montre pas de comparaison : il faudrait comparer au score propre de la piece portee).
 3. Dofus/Trophees (6 emplacements) et familiers : meme approche que les anneaux.
 4. Rattrapage d'aventure progressif si l'etape bloque encore apres huntWins victoires.

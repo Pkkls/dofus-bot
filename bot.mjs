@@ -54,7 +54,7 @@ try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch 
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
 const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'zone', 'aventure', 'f5'];
-const safe = (name, p) => p.catch((e) => log(`ERREUR ${name} ` + e.message.split('\n')[0]));
+const safe = (name, p) => p.catch((e) => log(`ERREUR ${name} ` + e.message.split('\n')[0] + ' | ' + (e.message.match(/waiting for (.+)/)?.[1] ?? '').slice(0, 160))); // + l'element vise
 
 // Poids des stats pour comparer un objet a celui porte. Reglage : adapte Force/Intelligence/Chance/Agilite a ton element.
 const WEIGHTS = {
@@ -173,14 +173,13 @@ async function equipFromInventory(page) {
     await filter.first().click();
     await sleep(800);
     const items = invItems(main);
-    // fusion : 3 exemplaires d'un objet au moins aussi bon que la piece portee -> tiers suivant (+10 % stats)
-    for (let i = 0, fused = 0; i < Math.min(await items.count(), 25) && fused < 5; i++) {
-      await items.nth(i).click();
-      await sleep(300);
+    // fusion : 3 exemplaires d'un objet au moins aussi bon que la piece portee -> tiers suivant (+10 % stats) ; seuls les badges FUSION
+    const fusable = items.filter({ hasText: 'FUSION' });
+    for (let i = 0, fused = 0; i < Math.min(await fusable.count(), 10) && fused < 5; i++) {
+      const fd = await openItem(main, fusable.nth(i));
       const fuse = main.getByRole('button', { name: /^Fusionner 3/ });
-      if (!(await fuse.isEnabled().catch(() => false))) continue;
-      const fd = parseDetail(await main.innerText());
-      if (!fd || fd.diff < 0) continue; // ponytail: le moins bon part chez le marchand, 3 ventes > 1 fusion
+      if (!fd || !(await fuse.isEnabled().catch(() => false))) continue;
+      if (fd.diff < 0) continue; // ponytail: le moins bon part chez le marchand, 3 ventes > 1 fusion
       await fuse.click();
       const ok = main.getByRole('button', { name: /^Confirmer/ }); // meme schema en 2 clics que la vente, si present
       if (await ok.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await ok.click();
@@ -195,19 +194,14 @@ async function equipFromInventory(page) {
     const seen = [];
     // ponytail: 25 objets max par type ; trier par niveau d'abord si l'inventaire grossit
     for (let i = 0; i < Math.min(await items.count(), 25); i++) {
-      await items.nth(i).click();
-      await sleep(300);
-      if (!(await main.getByRole('button', { name: /^Équiper/ }).first().isEnabled().catch(() => false))) continue;
-      const d = parseDetail(await main.innerText());
-      if (!d) continue;
+      const d = await openItem(main, items.nth(i));
+      if (!d || !(await main.getByRole('button', { name: /^Équiper/ }).first().isEnabled().catch(() => false))) continue;
       seen.push({ i, ...d });
       if (d.diff > best) { best = d.diff; bestIdx = i; bestName = d.name; }
       if (d.diff < 0 && SELLABLE.includes(slot) && SELL_RARITY.has(d.rarity) && !d.fav) junk.push([d.name, d.diff]);
     }
     decide(`Inventaire ${slot} : ${bestIdx >= 0 ? `j'equipe ${bestName} (score +${Math.round(best)})` : 'rien de mieux que ma piece'}${junk.length ? `, ${junk.length} moins bon(s) a vendre` : ''}`);
-    if (bestIdx >= 0) {
-      await items.nth(bestIdx).click();
-      await sleep(300);
+    if (bestIdx >= 0 && (await openItem(main, items.nth(bestIdx)))?.name === bestName) {
       await main.getByRole('button', { name: /^Équiper/ }).first().click();
       log(`EQUIPE (inventaire) ${slot}: ${bestName} (score ${Math.round(best)})`);
       await sleep(1500);
@@ -215,6 +209,21 @@ async function equipFromInventory(page) {
     await sellJunk(page, main, slot, junk);
   }
 }
+
+// Ouvre le detail d'un objet de la grille et attend que le panneau montre CET objet (nom = texte de l'image).
+// Sinon null : on n'equipe ni ne vend jamais sur un panneau perime (le clic ne met pas toujours le panneau a jour).
+async function openItem(main, item) {
+  const alt = (await item.locator('img').first().getAttribute('alt').catch(() => null))?.trim();
+  if (!alt) return null;
+  await item.click({ timeout: 5000 }).catch(() => {});
+  for (let k = 0; k < 10; k++) {
+    await sleep(150);
+    const d = parseDetail(await main.innerText());
+    if (d && (d.name === alt || d.name.startsWith(alt + ' '))) return d;
+  }
+  return null;
+}
+const baseName = (n) => n.replace(/ · (Tiers \d+|Rayonnant)$/, ''); // texte de l'image = nom sans le tiers
 
 // Anneaux : 2 emplacements, le jeu compare toujours a l'anneau 1 mais propose "Equiper a la place de X (Anneau 1|2)".
 // Scores connus memorises dans S.rings. Si l'anneau 2 est inconnu, on y place le meilleur du sac : l'ancien revient au sac
@@ -224,29 +233,28 @@ async function optimizeRings(page, main) {
   const scan = async () => {
     const out = [];
     for (let i = 0; i < Math.min(await items.count(), 60); i++) {
-      await items.nth(i).click();
-      await sleep(250);
-      if (!(await main.getByRole('button', { name: /^Équiper/ }).first().isEnabled().catch(() => false))) continue;
-      const d = parseDetail(await main.innerText());
-      if (!d) continue;
+      const d = await openItem(main, items.nth(i));
+      if (!d || !(await main.getByRole('button', { name: /^Équiper/ }).first().isEnabled().catch(() => false))) continue;
       S.rings[d.name] = d.own;
       if (d.cmp) S.rings[d.cmp] = d.own - d.diff;
       out.push({ i, ...d });
     }
     return out;
   };
-  const worn = () => main.locator('button').filter({ hasText: /^Anneau$/ }).locator('img').evaluateAll((els) => els.map((e) => e.alt));
+  // emplacements portes : le texte peut contenir un badge de tiers ("T2 Anneau"), d'ou la regex ; score cherche par nom exact puis par nom de base
+  const worn = () => main.locator('button').filter({ hasText: /(^|\s)Anneau$/ }).locator('img').evaluateAll((els) => els.map((e) => e.alt));
+  const scoreOf = (n) => S.rings[n] ?? Object.entries(S.rings).find(([k]) => baseName(k) === n)?.[1];
   let sack = await scan();
   for (let round = 0; round < 4 && sack.length; round++) {
-    const [n1, n2] = await worn(), s = [S.rings[n1], S.rings[n2]];
+    const [n1, n2] = await worn(), s = [scoreOf(n1), scoreOf(n2)];
+    if (!n1 || !n2) { decide(`Anneaux : emplacements portes illisibles (${n1 ?? '?'}, ${n2 ?? '?'}), je ne touche a rien`); break; }
     const best = sack.reduce((a, b) => (b.own > a.own ? b : a));
     let slot = 0;
     if (s[1] === undefined) slot = 2; // decouverte de l'anneau 2
     else if (s[0] === undefined) slot = 1;
     else { const weak = s[0] <= s[1] ? 1 : 2; if (best.own > s[weak - 1]) slot = weak; }
     if (!slot) { decide(`Anneaux : paire optimale (${n1} ${Math.round(s[0])}, ${n2} ${Math.round(s[1])}), rien de mieux au sac (meilleur ${best.name} ${Math.round(best.own)})`); break; }
-    await items.nth(best.i).click();
-    await sleep(300);
+    if ((await openItem(main, items.nth(best.i)))?.name !== best.name) break; // la grille a bouge : on s'arrete proprement
     await main.getByRole('button', { name: new RegExp(`\\(Anneau ${slot}\\)$`) }).click();
     await sleep(1500);
     const why = s[slot - 1] === undefined ? `decouverte du score de ${slot === 1 ? n1 : n2}` : `${Math.round(best.own)} > ${Math.round(s[slot - 1])}`;
@@ -255,7 +263,7 @@ async function optimizeRings(page, main) {
     sack = await scan();
   }
   const [n1, n2] = await worn();
-  const minWorn = Math.min(S.rings[n1] ?? -Infinity, S.rings[n2] ?? -Infinity);
+  const minWorn = Math.min(scoreOf(n1) ?? -Infinity, scoreOf(n2) ?? -Infinity);
   const spare = new Set(sack.filter((r) => r.level >= S.level - CFG.spareWindow).sort((a, b) => b.own - a.own).slice(0, CFG.ringSpare));
   // vendu : hors reserve, moins bon que les deux portes, rarete Commun..Rare, pas favori
   const junk = sack.filter((r) => !spare.has(r) && r.own < minWorn && SELL_RARITY.has(r.rarity) && !r.fav).map((r) => [r.name, r.own - minWorn]);
@@ -266,10 +274,11 @@ async function optimizeRings(page, main) {
 // vend 1 exemplaire de chaque objet de la liste (vente en 2 clics : "Vendre x1" puis "Confirmer")
 async function sellJunk(page, main, slot, junk) {
     for (const [name, s] of junk) {
-      const it = invItems(main).filter({ has: page.locator(`img[alt="${name.replace(/"/g, '\\"')}"]`) });
-      if (!(await it.count())) { log(`ERREUR vente ${name} : introuvable dans la grille`); continue; }
-      await it.first().click();
-      await sleep(300);
+      // meme image pour tous les tiers : on ouvre chaque candidat jusqu'a trouver le nom exact
+      const cands = invItems(main).filter({ has: page.locator(`img[alt="${baseName(name).replace(/"/g, '\\"')}"]`) });
+      let found = false;
+      for (let k = 0; k < await cands.count() && !found; k++) found = (await openItem(main, cands.nth(k)))?.name === name;
+      if (!found) { log(`ERREUR vente ${name} : introuvable dans la grille`); continue; }
       const sell = main.getByRole('button', { name: /^Vendre ×1/ });
       if (!(await sell.isEnabled().catch(() => false))) continue;
       const price = (await sell.innerText()).replace(/^Vendre ×1 : /, '');
