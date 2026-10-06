@@ -68,6 +68,10 @@ Le site affiche un test de presence ("Es-tu toujours la ? Clique sur le chiffre 
 - Chaque type d'objet ne traite que les objets dont le panneau indique le meme emplacement (`sameSlot`), meme si le filtre de type n'est pas encore applique.
 - Coffres cadeaux ouverts.
 
+## Reglages en vigueur (config.json local, non versionne)
+
+Au 2026-10-06 : plage horaire active (scheduleOn 1) de 13:00 a 06:00 (activeFrom 780, activeTo 360), plafond 240 combats par heure (environ 4 par minute). Autres reglages par defaut. A modifier depuis le tableau de bord, section Reglages.
+
 ## A faire ensuite
 
 1. Confirmer en reel une fusion (aucun objet eligible pour l'instant : il faut 3 exemplaires au moins aussi bons que la piece portee).
