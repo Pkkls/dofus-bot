@@ -62,7 +62,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -171,7 +171,7 @@ const ADV_FIGHT = /^(Combattre|Affronter le boss)/;
 const SELLABLE = ['Chapeau', 'Cape', 'Amulette', 'Ceinture', 'Bottes', 'Arme', 'Bouclier'];
 const SELL_RARITY = new Set(['COMMUN', 'PEU COMMUN']); // RARE et au-dessus : jamais vendus
 // vente prudente, dans le doute on garde : favori, rarete RARE+, tiers fusionne ou Rayonnant, liste NEVER_SELL, comparaison incomplete
-const NEVER_SELL = ['Gelano', 'Mollosk']; // Mollosk : objet garde au prestige // noms de base (sans tiers) des objets rares a garder quoi qu'il arrive
+const NEVER_SELL = ['Gelano', 'Molosk', 'Mollosk']; // Molosk (familier) : objet garde au prestige // noms de base (sans tiers) des objets rares a garder quoi qu'il arrive
 const canSell = (d) => !d.fav && SELL_RARITY.has(d.rarity) && !/ · (Tiers \d+|Rayonnant)$/.test(d.name) && !NEVER_SELL.includes(baseName(d.name)) && !d.partial;
 // panneau de detail : "Nom / RARETE / Emplacement / Niveau N / stats / Exemplaires..." ; on prend la derniere occurrence (la grille au-dessus contient des badges)
 const parseDetail = (t) => {
@@ -243,7 +243,10 @@ async function openItem(main, item) {
   for (let k = 0; k < 10; k++) {
     await sleep(150);
     const d = parseDetail(await main.innerText());
-    if (d && (d.name === alt || d.name.startsWith(alt + ' '))) return d;
+    if (d && (d.name === alt || d.name.startsWith(alt + ' '))) {
+      if (!existsSync('dump/inv_detail.txt')) writeFileSync('dump/inv_detail.txt', `${await main.innerText()}\n\n=== BOUTONS\n${(await main.locator('button').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')).filter(Boolean).join('\n')}`); // fiche apres la maj Forgemagie
+      return d;
+    }
   }
   return null;
 }
@@ -1020,6 +1023,56 @@ async function buyEnergy(page, max = false, sold = false) {
   else log(`ENERGIE achat sans effet (${after?.e ?? '?'}/${j.max})`);
 }
 
+// Inventaire du site : pour chaque onglet du menu, boutons et listes (nombres masques), diff avec le releve precedent.
+// Le 1er releve sert de reference ; ensuite chaque nouvel onglet/bouton est signale (log MAJ SITE, decision, alerte) et la page sauvegardee.
+let siteScanDue = false;
+async function siteScan(page) {
+  await page.goto(BASE + '/');
+  await sleep(2500);
+  const nav = await page.locator('header a[href^="/"], nav a[href^="/"]').evaluateAll((els) => [...new Set(els.map((e) => e.getAttribute('href')))]).catch(() => []);
+  const map = {};
+  for (const p of nav.filter((x) => x !== '/' && !/deconnexion|logout|combat/i.test(x))) {
+    await page.goto(BASE + p).catch(() => {});
+    await sleep(2500);
+    const later = page.getByRole('button', { name: 'Plus tard', exact: true });
+    if (await later.isVisible().catch(() => false)) await later.click().catch(() => {});
+    map[p] = await page.locator('main').locator('button, select, input').evaluateAll((els) => [...new Set(els.map((e) => (e.innerText || e.value || e.getAttribute('aria-label') || e.title || '').replace(/\s+/g, ' ').trim().replace(/\d[\d\s.,]*/g, '#').slice(0, 60)).filter((t) => t && t.length > 1))]).catch(() => []);
+    writeFileSync(`dump/site${p.replace(/\W/g, '_')}.txt`, await page.locator('main').innerText().catch(() => ''));
+  }
+  const old = S.siteMap;
+  S.siteMap = map;
+  if (!old) { decide(`Site : releve de reference fait (${Object.keys(map).length} onglets)`); return; }
+  const changes = [];
+  for (const [p, btns] of Object.entries(map)) {
+    if (!old[p]) changes.push(`nouvel onglet ${p}`);
+    else { const nb = btns.filter((b) => !old[p].includes(b)); if (nb.length) changes.push(`${p} : ${nb.slice(0, 8).join(', ')}`); }
+  }
+  if (!changes.length) { decide('Site mis a jour : aucun nouvel onglet ni bouton'); return; }
+  log(`MAJ SITE nouveautes : ${changes.join(' | ').slice(0, 600)}`);
+  decide(`Mise a jour du site : ${changes.join(' | ').slice(0, 400)} (pages dans dump/site_*.txt)`);
+  alert('mise a jour du site : nouveaux onglets/boutons, voir le tableau de bord');
+}
+
+// Forgemagie : ameliore le Bouclier de forge avec toutes les orbes disponibles (un echec coute les orbes, jamais un niveau)
+async function forgeUpgrade(page) {
+  await page.goto(BASE + '/forgemagie');
+  await page.getByText('Bouclier de forge').first().waitFor({ timeout: 20000 });
+  await sleep(1500);
+  const lvl = async () => (await page.locator('main').innerText()).match(/Bouclier de forge · niveau (\d+)/)?.[1];
+  const l0 = await lvl();
+  for (let k = 0; k < 30; k++) {
+    const ten = page.getByRole('button', { name: /10 essais/ });
+    const one = page.getByRole('button', { name: /^Améliorer/ });
+    const b = (await ten.isEnabled().catch(() => false)) ? ten : (await one.isEnabled().catch(() => false)) ? one : null;
+    if (!b) break;
+    await b.click();
+    await sleep(1500);
+  }
+  const l1 = await lvl();
+  if (l1 !== l0) { log(`FORGE bouclier niveau ${l0} -> ${l1}`); decide(`Forgemagie : Bouclier de forge niveau ${l0} -> ${l1}`); }
+  else decide(`Forgemagie : bouclier niveau ${l0}, pas assez d'orbes pour l'ameliorer`);
+}
+
 // Forgemagie (06/10) : la 1re visite donne le Bouclier de forge ; page sauvegardee pour coder son usage ensuite
 async function visitForge(page) {
   await page.goto(BASE + '/forgemagie');
@@ -1046,6 +1099,7 @@ async function managePass(page) {
   for (const k of ['coffres', 'deck', 'inventaire', 'hdv', 'carac']) S.last[k] = Date.now();
   if (!ZONES) await safe('zones', allZones(page)); // niveaux des zones pour le garde-fou (une fois par lancement)
   if (!S.last.forge) await safe('forge', visitForge(page)); // 1re visite : Bouclier de forge offert
+  else await safe('forge', forgeUpgrade(page));
   await page.goto(COMBAT);
 }
 
@@ -1072,7 +1126,11 @@ page.goto = async (...a) => {
   }
   return rawGoto(...a);
 };
-page.on('load', () => setTimeout(() => page.locator('body').innerText().then(readHeader, () => {}), 1500)); // nom/niveau/kamas aussi pendant les passes
+page.on('load', () => setTimeout(() => page.locator('body').innerText().then(readHeader, () => {}), 1500));
+// mise a jour du site = nouvel id de deploiement Next (dpl=... dans les scripts) -> inventaire des onglets/boutons au prochain ecran de fin
+page.on('load', () => setTimeout(() => page.evaluate(() => [...document.scripts].map((s) => s.src.match(/dpl=([\w-]+)/)?.[1]).find(Boolean) ?? null).then((d) => {
+  if (d && d !== S.dpl) { if (S.dpl) { siteScanDue = true; log(`MAJ SITE detectee (deploiement ${S.dpl} -> ${d})`); } else siteScanDue = !S.siteMap; S.dpl = d; }
+}, () => {}), 2000)); // nom/niveau/kamas aussi pendant les passes
 await page.goto(COMBAT);
 
 if (page.url().includes('/connexion')) {
@@ -1286,6 +1344,7 @@ while (true) {
       await attackGroup(page, zone, strikes ? 0 : CFG.maxGroup);
       continue;
     }
+    if (siteScanDue) { siteScanDue = false; await safe('site', siteScan(page)); await page.goto(COMBAT).catch(() => {}); continue; }
     if (trainLeft > 0 && CFG.manualFight) {
       trainZone ??= await pickHardZone(page);
       if (trainZone && (await safe('entrainement', attackGroup(page, trainZone, 3))) === true) { fight = 'entrainement'; continue; }
