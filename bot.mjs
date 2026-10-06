@@ -291,6 +291,13 @@ async function optimizeRings(page, main) {
     if (!slot) { decide(`Anneaux : paire optimale (${n1} ${Math.round(s[0])}, ${n2} ${Math.round(s[1])}), rien de mieux au sac (meilleur ${best.name} ${Math.round(best.own)})`); break; }
     if ((await openItem(main, items.nth(best.i)))?.name !== best.name) break; // la grille a bouge : on s'arrete proprement
     // par le texte : un title sur le bouton remplace son nom accessible
+    // le jeu ne propose que les emplacements remplacables (ex. l'anneau garde au prestige est verrouille) : on se rabat sur l'autre s'il vaut le coup
+    const offered = (await main.locator('button', { hasText: /^Équiper/ }).allInnerTexts().catch(() => [])).join(' ');
+    const other = 3 - slot;
+    if (!new RegExp(`Anneau ${slot}\\)`).test(offered) && new RegExp(`Anneau ${other}\\)`).test(offered) && (s[other - 1] === undefined || best.own > s[other - 1])) {
+      decide(`Anneaux : emplacement ${slot} non remplacable (verrouille), je vise l'emplacement ${other}`);
+      slot = other;
+    }
     const slotBtn = main.locator('button', { hasText: new RegExp(`Anneau ${slot}\\)?\\s*$`) }).first();
     if (!(await slotBtn.isVisible().catch(() => false))) {
       const equips = await main.locator('button', { hasText: /^Équiper/ }).allInnerTexts().catch(() => []);
