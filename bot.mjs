@@ -637,6 +637,7 @@ async function playTurn(page) {
   const HYP = fightMem.stall ? STALL_HYPOS[fightMem.hyp] : null;
   const P = HYP ? HYP.P : PROFILES[fightMem.profile];
   const forceFocus = HYP?.focus ? HYP.focus(st) : null;
+  S.fightNow.hyp = HYP?.name ?? null; // tableau de bord
   if (fightMem.incTurn !== st.turn) { // une seule estimation par tour, meme si le tour est joue en plusieurs appels
     const lost = fightMem.endHp == null ? 0 : Math.max(0, fightMem.endHp - (st.hp + st.shield));
     const alive0 = st.enemies.filter((e) => e.hp > 0).length;

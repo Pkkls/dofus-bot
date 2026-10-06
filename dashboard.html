@@ -357,6 +357,12 @@ details[open].card > summary .chev { transform: rotate(180deg); }
           <div class="elegend" id="m-k"></div>
           <div class="muted" style="margin:12px 0 6px">Sauts XP hard (recents)</div>
           <div class="cards" id="m-jumps"></div>
+          <div class="muted" style="margin:12px 0 6px">Pats appris (hypothese qui marche, par groupe d'ennemis)</div>
+          <div class="cards" id="m-stall"></div>
+          <div class="muted" style="margin:12px 0 6px">Deblocages appris (par ecran)</div>
+          <div class="cards" id="m-unblock"></div>
+          <div class="muted" style="margin:12px 0 6px">Adversaires d'arene evites</div>
+          <div id="m-avoid" class="muted">aucun</div>
           <div class="muted" style="margin:12px 0 6px">Indices de defaite connus</div>
           <div id="m-hints" class="muted">aucun</div>
         </div>
@@ -650,7 +656,7 @@ function render(d) {
   const L = S.learn ?? {}, prof = L.prof ?? {}, pct = (x) => Math.round(x * 100) + ' %';
   $('m-mode').textContent = CFG.manualFight ? 'manuel' : 'auto du jeu';
   const fn = S.fightNow;
-  $('m-now').textContent = fn && now - fn.at < 120000 ? `tour ${fn.turn}, style ${fn.profile}${fn.foes?.length ? ' vs ' + fn.foes.join(', ') : ''}` : 'aucun';
+  $('m-now').textContent = fn && now - fn.at < 120000 ? `tour ${fn.turn}, ${fn.hyp ? `pat : ${fn.hyp}` : `style ${fn.profile}`}${fn.foes?.length ? ' vs ' + fn.foes.join(', ') : ''}` : 'aucun';
   $('m-rate').textContent = S.xpHard ? 'XP hard en cours : palier suivant a chaque victoire' : S.climb?.n ? `${pct(S.climb.rate)} sur ${S.climb.n}, cible ${pct(CFG.targetWin)}` : `cible ${pct(CFG.targetWin)}`;
   $('m-zone').textContent = S.zone ? S.zone.replace('/chasse?zone=', 'zone ') : '-';
   $('m-pace').textContent = `${(CFG.thinkMin / 1000).toFixed(1)}-${(CFG.thinkMax / 1000).toFixed(1)} s/carte, ${CFG.gapMin}-${CFG.gapMax} s entre combats, pause ${pct(CFG.breakChance)}, fuite ${pct(CFG.loseRate)}`;
@@ -660,6 +666,13 @@ function render(d) {
   const H = L.hard;
   $('m-hard').textContent = `${S.xpHard ? 'en cours' : 'au repos'}${H?.n ? `, limite apprise +${Math.round(H.offset)} niv (mesuree niv ${H.lvl}, ${H.n} fois)` : ', limite pas encore mesuree'}${CFG.hardEvery ? `, relance tous les ${CFG.hardEvery} niv` : ''}`;
   $('m-jumps').innerHTML = (S.xpHardLog ?? []).slice(0, 8).map((j) => `<div class="cardx"><span class="cost">${j.res ?? '…'}</span><span class="n">${esc(j.name)} <span class="muted">· monstres ${j.min}-${j.max}, moi ${j.lvl}</span></span><span class="m num">${hm(j.t)}</span></div>`).join('') || '<div class="empty" style="padding:0">Aucun saut pour l\'instant.</div>';
+  const best = (o) => Object.entries(o ?? {}).sort((a, z) => (z[1].ok + 1) / (z[1].ok + z[1].ko + 2) - (a[1].ok + 1) / (a[1].ok + a[1].ko + 2))[0];
+  const stall = Object.entries(L.stall ?? {}).map(([k, o]) => [k, best(o)]).filter(([, b]) => b);
+  $('m-stall').innerHTML = stall.slice(0, 6).map(([k, [h, r]]) => `<div class="cardx"><span class="cost">${r.ok}</span><span class="n">${esc(k)} <span class="muted">· ${esc(h)}</span></span><span class="m num">${r.ok}/${r.ok + r.ko}</span></div>`).join('') || '<div class="empty" style="padding:0">Aucun pat rencontre.</div>';
+  const unb = Object.entries(L.unblock ?? {}).map(([k, o]) => [k, best(o)]).filter(([, b]) => b);
+  $('m-unblock').innerHTML = unb.slice(0, 6).map(([k, [a, r]]) => `<div class="cardx"><span class="cost">${r.ok}</span><span class="n">${esc(k)} <span class="muted">· ${esc(a)}</span></span><span class="m num">${r.ok}/${r.ok + r.ko}</span></div>`).join('') || '<div class="empty" style="padding:0">Aucun blocage rencontre.</div>';
+  const av = Object.entries(L.arenaAvoid ?? {});
+  $('m-avoid').innerHTML = av.length ? av.map(([k, v]) => `<div><b>${esc(k)}</b> : evite depuis le niv ${v.lvl}, retente au niv ${v.lvl + 3} ou avec un autre deck</div>`).join('') : 'aucun';
   const B = L.build;
   $('m-build').textContent = B?.n ? `PV mini moyens ${pct(B.minHp)}, defaites ${pct(B.loss)} sur ${B.n} combats` : 'en cours d\'apprentissage';
   const zs = Object.entries(L.zones ?? {}).filter(([, z]) => z.n >= 3).sort((a, z) => z[1].xpm - a[1].xpm).slice(0, 3);
