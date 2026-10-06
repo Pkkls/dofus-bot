@@ -827,7 +827,7 @@ async function buyEnergy(page, max = false) {
     decide(`Energie max demandee depuis le tableau de bord : ${label}`);
     await b.click();
     await sleep(3000);
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'networkidle' }); await page.getByText(/^Acheter \(/).waitFor({ timeout: 20000 }).catch(() => {});
     const after = await read();
     log(after?.e > j.e ? `ENERGIE achetee (${label}) : ${after.e}/${after.max}` : `ENERGIE achat sans effet (${label}, ${after?.e ?? '?'}/${j.max})`);
     return;
@@ -840,7 +840,7 @@ async function buyEnergy(page, max = false) {
   const ok = page.getByRole('button', { name: /^Confirmer/ });
   if (await ok.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await ok.click();
   await sleep(3000);
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'networkidle' }); await page.getByText(/^Acheter \(/).waitFor({ timeout: 20000 }).catch(() => {});
   const after = await read();
   if (after?.e > j.e) { S.kamas -= 10 * j.price; log(`ENERGIE achetee +10 (${10 * j.price} K) : ${after.e}/${after.max}`); }
   else log(`ENERGIE achat sans effet (${after?.e ?? '?'}/${j.max})`);
