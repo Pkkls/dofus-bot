@@ -1402,7 +1402,7 @@ let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastTe
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = S.huntLeft ?? 0, backToAdventure = false; // rattrapage garde entre redemarrages
 // Aventure prioritaire : hors rattrapage XP (apres une defaite d'aventure), XP hard et entrainement. Chemin bloque/fini -> chasse, nouvel essai 30 min apres
-const wantAdventure = () => huntLeft === 0 && !xpHard && trainLeft === 0 && !spotQueue.length && Date.now() > (S.advBlockedUntil ?? 0);
+const wantAdventure = () => !rushing() && huntLeft === 0 && !xpHard && trainLeft === 0 && !spotQueue.length && Date.now() > (S.advBlockedUntil ?? 0);
 // Spots XP (bouton) : zones candidates mesurees chacune sur SPOT_FIGHTS combats, puis installation sur la meilleure XP/min
 let spotQueue = [], spotFights = 0;
 const SPOT_FIGHTS = 3;
@@ -1943,10 +1943,10 @@ while (true) {
       continue;
     }
     // meilleure zone connue : XP/min la plus haute parmi celles gagnees au taux vise, mesurees recemment (niveau proche)
-    if (!xpHard && zone && !adventure && !climbDir && ++zoneCheck >= 20) {
+    if (!xpHard && zone && !adventure && !climbDir && ++zoneCheck >= (rushing() ? 8 : 20)) {
       zoneCheck = 0;
       const Z = S.learn?.zones ?? {}, cur = Z[zone];
-      const best = Object.entries(Z).filter(([, z]) => z.n >= 5 && z.win >= CFG.targetWin && Math.abs(z.lvl - S.level) <= 10).sort((a, b) => b[1].xpm - a[1].xpm)[0];
+      const best = Object.entries(Z).filter(([, z]) => z.n >= (rushing() ? 1 : 5) && z.win >= CFG.targetWin && Math.abs(z.lvl - S.level) <= 10).sort((a, b) => b[1].xpm - a[1].xpm)[0];
       if (best && best[0] !== zone && cur && best[1].xpm > 1.2 * cur.xpm) {
         decide(`Zone : ${best[0].split('=')[1]} rapporte ${Math.round(best[1].xpm)} XP/min contre ${Math.round(cur.xpm)} ici (victoires ${Math.round(best[1].win * 100)} %), j'y vais`);
         log(`ZONE meilleure XP/min ${best[0]} (${Math.round(best[1].xpm)} vs ${Math.round(cur.xpm)})`);
