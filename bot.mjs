@@ -17,7 +17,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1] }; // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1] }; // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -61,7 +61,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['stats', 'learn', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -130,6 +130,7 @@ async function optimizeDeck(page) {
   await page.goto(BASE + '/personnage');
   await page.getByText('Caractéristiques').first().waitFor();
   const stats = parseStats(await page.locator('main').innerText());
+  S.stats = stats; // aussi pour le combat manuel
   await page.goto(BASE + '/deck');
   await page.getByText('Collection').first().waitFor();
   const inDeck = page.locator('button[title="Cliquer pour retirer du deck"]');
@@ -366,6 +367,167 @@ async function allocateStats(page) {
   }
 }
 
+// ---- Combat manuel. Tout est relu a l'ecran a chaque coup (main, PA, PV, bouclier, resistances, protections), les stats
+// viennent de /personnage (S.stats, relues a chaque passe deck) : le jeu suit le deck et le stuff du moment.
+// A chaque coup : toutes les combinaisons de cartes payables x chaque cible focus, evaluees ; on joue la 1re carte du meilleur plan puis on recalcule.
+const readFight = (page) => page.locator('main').evaluate((m) => {
+  const num = (s) => +String(s).replace(/\D/g, '');
+  const NUMS = /^([\d\s\u00a0\u202f]+)\/([\d\s\u00a0\u202f]+)(?:·\s*([\d\s\u00a0\u202f]+) bouclier)?$/; // "1 261 / 2 210 · 442 bouclier"
+  const enemies = [...m.querySelectorAll('button')].filter((b) => b.querySelector('[aria-label="Résistances"]')).map((b, i) => {
+    const t = b.innerText;
+    const hp = [...b.querySelectorAll('div')].map((d) => d.innerText.trim().match(NUMS)).find(Boolean) ?? [0, '0', '1', '0'];
+    const res = {};
+    b.querySelectorAll('[title^="Résistance"]').forEach((r) => { const x = r.title.match(/Résistance (\S+) : (-?\d+)/); if (x) res[x[1]] = +x[2]; });
+    return { i, name: b.querySelector('.font-bold')?.innerText.trim() ?? '?', hp: num(hp[1]), max: num(hp[2]) || 1, res, prot: num(t.match(/Protection\s*([\d\s  ]+)/)?.[1] ?? 0) + num(hp[3] ?? 0), rage: /Rage/.test(t), boss: /BOSS/i.test(t) };
+  });
+  const pv = [...m.querySelectorAll('div')].map((d) => d.innerText.trim()).find((s) => /^[\d\s  ]+\/[\d\s  ]+ PV/.test(s)) ?? '0/1 PV';
+  const [hp, max] = pv.split(' PV')[0].split('/').map(num);
+  const hand = [...m.querySelectorAll('button')].filter((b) => b.querySelector('span[aria-label$=" PA"]')).map((b) => ({
+    name: b.querySelector('.title')?.innerText.trim() ?? '?', cost: num(b.querySelector('span[aria-label$=" PA"]').getAttribute('aria-label')),
+    lines: [...b.querySelectorAll('li')].map((l) => l.innerText.trim()), weapon: (b.title || '').startsWith('Ton arme'), off: b.disabled,
+  }));
+  const t = m.innerText;
+  return {
+    myTurn: /À toi de jouer/.test(t), turn: +(t.match(/Tour (\d+)/)?.[1] ?? 0), pa: +(t.match(/(\d+) PA ·/)?.[1] ?? 0), paKnown: /\d+ PA ·/.test(t), hp, max, shield: num(pv.match(/([\d\s  ]+) bouclier/)?.[1] ?? 0),
+    pow: [...t.matchAll(/\+(\d+) Puissance \(\d+\)/g)].reduce((s, x) => s + +x[1], 0),
+    target: t.match(/Cible : ([^\n(]+?) \(/)?.[1] ?? null, enemies, hand,
+  };
+});
+const cardFx = (lines) => {
+  const f = { dmg: [], heal: 0, healPct: 0, shieldPct: 0, shieldLvl: 0, pow: 0 };
+  for (const l of lines) {
+    let m;
+    if ((m = l.match(/(\d+) à (\d+) (dommages|vol de vie) (Neutre|Terre|Feu|Eau|Air)/))) f.dmg.push({ avg: (+m[1] + +m[2]) / 2, elem: m[4], steal: m[3] !== 'dommages', zone: /en zone/.test(l) });
+    else if ((m = l.match(/Soigne (\d+) ?% des PV max/))) f.healPct += +m[1];
+    else if ((m = l.match(/Soigne (\d+) à (\d+)/))) f.heal += (+m[1] + +m[2]) / 2;
+    else if ((m = l.match(/Bouclier de (\d+) ?% des PV max/))) f.shieldPct += +m[1];
+    else if ((m = l.match(/Bouclier de (\d+) ?% du niveau/))) f.shieldLvl += +m[1];
+    else if ((m = l.match(/\+(\d+) Puissance/))) f.pow += +m[1];
+  }
+  return f;
+};
+const NO_STATS = { Force: 0, Intelligence: 0, Chance: 0, Agilité: 0, Puissance: 0, dmg: {} };
+// S.learn.k[elem] : correctif appris (degats reels / prevus), absorbe critiques et multiplicateurs inconnus
+const hitOn = (d, e, pow, s) => Math.max(0, (d.avg * (1 + ((s[ELEM_STAT[d.elem]] ?? 0) + s.Puissance + pow) / 100) + (s.dmg[d.elem] ?? 0)) * (1 - (e.res[d.elem] ?? 0) / 100) * (S.learn?.k?.[d.elem] ?? 1));
+// styles de jeu, choisis par UCB1 sur les combats passes (recompense : victoire, plus elle est rapide mieux c'est)
+const PROFILES = {
+  equilibre: { heal: [2.5, 1.2, 0.3], shield: 1.2, kill: 3 },
+  agressif: { heal: [1.5, 0.6, 0.1], shield: 0.6, kill: 4 },
+  prudent: { heal: [3.5, 2, 0.6], shield: 1.6, kill: 2 },
+};
+const pickProfile = () => {
+  const L = (S.learn ??= {}).prof ??= {};
+  const n = Object.values(L).reduce((a, p) => a + p.n, 0);
+  return Object.keys(PROFILES).map((k) => [k, L[k]?.n ? L[k].r / L[k].n + Math.sqrt((2 * Math.log(n + 1)) / L[k].n) : Infinity]).sort((a, b) => b[1] - a[1])[0][0];
+};
+const rewardProfile = (k, win, turns) => { const p = ((S.learn ??= {}).prof ??= {})[k] ??= { n: 0, r: 0, w: 0 }; p.n++; p.w += win ? 1 : 0; p.r += win ? 1 - Math.min(turns, 20) / 40 : 0; };
+// valeur d'un plan (cartes jouees ce tour) avec un focus pour les cartes mono-cible
+// ponytail: degats ennemis estimes par ce qu'on a encaisse au tour precedent ; critiques, PM, retraits de PA ignores
+const planValue = (cards, st, focus, inc, s, P = PROFILES.equilibre) => {
+  const alive = st.enemies.filter((e) => e.hp > 0);
+  const left = new Map(alive.map((e) => [e.i, e.hp + e.prot]));
+  const pow = st.pow + cards.reduce((a, c) => a + c.fx.pow, 0);
+  let v = 0, heal = 0;
+  for (const c of cards) for (const d of c.fx.dmg) for (const e of d.zone ? alive : alive.filter((x) => x.i === focus)) {
+    const done = Math.min(hitOn(d, e, pow, s), left.get(e.i));
+    left.set(e.i, left.get(e.i) - done);
+    v += done; if (d.steal) heal += done / 2;
+  }
+  const threat = inc / Math.max(1, alive.length);
+  for (const e of alive) if (left.get(e.i) <= 0) v += 0.25 * e.max + P.kill * threat * (e.rage ? 1.5 : 1); // tuer = moins de coups recus
+  heal += cards.reduce((a, c) => a + c.fx.heal + (c.fx.healPct * st.max) / 100, 0);
+  const shield = cards.reduce((a, c) => a + (c.fx.shieldPct * st.max) / 100 + (c.fx.shieldLvl * (st.level || S.level || 100)) / 100, 0);
+  const danger = (st.hp + st.shield - inc) / st.max; // PV restants apres le prochain tour ennemi, en part du max
+  const w = danger < 0.35 ? P.heal[0] : danger < 0.6 ? P.heal[1] : P.heal[2];
+  v += w * Math.min(heal, st.max - st.hp) + (danger < 0.6 ? P.shield : P.shield / 3) * Math.min(shield, Math.max(0, inc - st.shield));
+  return v;
+};
+// meilleur plan : sous-ensembles de la main payables avec les PA (arme 1 fois/tour), x focus ; renvoie la carte a jouer en premier
+const bestMove = (st, inc, s, weaponUsed, blocked, P) => {
+  const hand = st.hand.filter((c) => !c.off && c.cost <= st.pa && !(c.weapon && weaponUsed) && !blocked.has(c.name)).map((c) => ({ ...c, fx: cardFx(c.lines) }));
+  const alive = st.enemies.filter((e) => e.hp > 0);
+  let best = { v: 0 };
+  for (let mask = 1; mask < 1 << hand.length; mask++) {
+    const cards = hand.filter((_, k) => mask & (1 << k));
+    if (cards.reduce((a, c) => a + c.cost, 0) > st.pa) continue;
+    for (const e of alive) { const v = planValue(cards, st, e.i, inc, s, P); if (v > best.v + 1e-6) best = { v, cards, focus: e }; }
+  }
+  if (!best.cards) return null;
+  // ordre : buffs de puissance, puis degats (mono-cible avant zone), puis soins/boucliers (le vol de vie a deja soigne)
+  const rank = (c) => (c.fx.pow ? 0 : c.fx.dmg.some((d) => !d.zone) ? 1 : c.fx.dmg.length ? 2 : 3);
+  const first = [...best.cards].sort((a, b) => rank(a) - rank(b))[0];
+  return { card: first, focus: best.focus, plan: best.cards.map((c) => c.name), v: best.v, single: first.fx.dmg.some((d) => !d.zone) };
+};
+let fightMem = { turn: 0, endHp: null, inc: 0, profile: null };
+// joue un tour complet ; false = echec de lecture ou de clic (l'appelant repasse en Auto)
+async function playTurn(page) {
+  const main = page.locator('main');
+  let st = await readFight(page);
+  if (!st.myTurn || !st.hand.length) return false;
+  const s = S.stats ?? NO_STATS;
+  if (st.turn <= 1 || !fightMem.profile) fightMem = { turn: st.turn, endHp: null, inc: 0, profile: pickProfile() };
+  fightMem.turn = st.turn;
+  const P = PROFILES[fightMem.profile];
+  if (fightMem.incTurn !== st.turn) { // une seule estimation par tour, meme si le tour est joue en plusieurs appels
+    const lost = fightMem.endHp == null ? 0 : Math.max(0, fightMem.endHp - (st.hp + st.shield));
+    const alive0 = st.enemies.filter((e) => e.hp > 0).length;
+    fightMem.inc = Math.max(lost, 0.6 * fightMem.inc, alive0 * 0.06 * st.max); // plancher : 6 % des PV max par ennemi vivant
+    fightMem.incTurn = st.turn; fightMem.weapon = false;
+  }
+  let weaponUsed = fightMem.weapon, plays = 0, fails = 0;
+  const blocked = new Set(), played = [];
+  // etat stable : main a moi, PA lisibles (pendant une animation le jeu affiche "- PA"), cartes actives, 2 lectures identiques
+  const settle = async (x) => {
+    for (let k = 0, prev = ''; k < 40; k++) {
+      const key = `${x.myTurn}|${x.pa}|${x.hand.map((c) => c.name + c.off).join()}|${x.enemies.map((e) => e.hp).join()}`;
+      if (x.myTurn && x.paKnown && x.hand.some((c) => !c.off) && key === prev) return x;
+      if (!x.enemies.some((e) => e.hp > 0) && x.enemies.length) return x; // combat gagne
+      prev = key; await sleep(250); x = await readFight(page);
+    }
+    return x;
+  };
+  st = await settle(st);
+  while (plays < 15) {
+    const mv = bestMove(st, fightMem.inc, s, weaponUsed, blocked, P);
+    if (!mv) break;
+    if (mv.single && st.target !== mv.focus.name) {
+      await main.locator('button').filter({ has: page.locator('[aria-label="Résistances"]') }).nth(mv.focus.i).click();
+      await sleep(400);
+    }
+    const before = st;
+    await page.locator('div.fixed button').filter({ hasText: mv.card.name }).first().click();
+    let after = before;
+    for (let k = 0; k < 15; k++) { await sleep(200); after = await readFight(page); if (after.pa !== before.pa || after.hand.length !== before.hand.length) break; }
+    after = await settle(after); // la carte s'anime : on attend un etat stable avant le coup suivant
+    if (after.pa === before.pa && after.hand.length === before.hand.length && after.myTurn) { // carte refusee (condition de lancer) : on l'ecarte pour ce tour
+      blocked.add(mv.card.name);
+      if (++fails >= 3) return false;
+      st = after; continue;
+    }
+    if (mv.card.weapon) weaponUsed = fightMem.weapon = true;
+    // calibrage : degats reels (PV + protection perdus) / prevus, si personne n'est mort (sinon le reel est plafonne)
+    const ehp = (x) => x.enemies.reduce((a, e) => a + e.hp + e.prot, 0);
+    const d0 = cardFx(mv.card.lines).dmg[0];
+    if (d0 && after.enemies.every((e, k) => e.hp > 0 || before.enemies[k]?.hp <= 0)) {
+      const alive = before.enemies.filter((e) => e.hp > 0);
+      const k0 = S.learn?.k?.[d0.elem] ?? 1;
+      const pred = cardFx(mv.card.lines).dmg.reduce((a, d) => a + (d.zone ? alive : alive.filter((x) => x.i === mv.focus.i)).reduce((b, e) => b + hitOn(d, e, before.pow, s), 0), 0) / k0;
+      const real = ehp(before) - ehp(after);
+      if (pred > 0 && real > 0) { const K = ((S.learn ??= {}).k ??= {}); K[d0.elem] = Math.min(3, Math.max(0.3, 0.85 * k0 + 0.15 * (real / pred))); }
+    }
+    played.push(`${mv.card.name}${mv.single ? ' > ' + mv.focus.name : ''}`);
+    plays++; st = after;
+    if (!st.myTurn || !st.enemies.some((e) => e.hp > 0)) break; // combat fini
+  }
+  if (!played.length) writeFileSync('dump/nomove.json', JSON.stringify({ at: new Date().toISOString(), again: bestMove(st, fightMem.inc, s, weaponUsed, blocked, P)?.plan ?? null, weaponUsed, one: st.hand.map((c) => [c.name, planValue([{ ...c, fx: cardFx(c.lines) }], st, 0, fightMem.inc, s, P)]), st, s, inc: fightMem.inc, P, blocked: [...blocked], html: await main.innerHTML().catch(() => '') }, null, 1)); // diagnostic : tour sans coup
+  decide(`Tour ${st.turn} manuel (${fightMem.profile}) : ${played.join(', ') || 'rien de rentable'} (reste ${st.paKnown ? st.pa : '?'} PA, PV ${st.hp}/${st.max}, degats ennemis estimes ${Math.round(fightMem.inc)})`);
+  if (st.myTurn) { // toujours rendre la main, meme si la lecture des ennemis a rate
+    fightMem.endHp = st.hp + st.shield;
+    await main.getByRole('button', { name: 'Fin du tour' }).click();
+  }
+  return true;
+}
+
 const RANK = ['Facile', 'Moyen', 'Difficile', 'Très difficile'];
 // plus gros groupe dont la difficulte <= maxRank, sinon le plus facile
 const pickGroup = (txt, maxRank) => {
@@ -495,6 +657,17 @@ if (process.argv[2] === 'test') {
   assert.equal(scoreItem('Vendre · 1 440 K\nNiveau 72 requis'), 0);
   const P = parseStats('\nForce\n45 (0 +45)\nIntelligence\n25 (0 +25)\nChance\n70 (0 +70)\nAgilité\n65 (0 +65)\nTerre\t4\t0 %\nFeu\t8\t0 %\nEau\t9\t0 %\nPuissance 85 · Soins 0');
   assert.deepEqual([P.Force, P.Chance, P.Puissance, P.dmg.Eau], [45, 70, 85, 9]);
+  { // combat manuel : PV pleins -> pas de soin, budget PA respecte, Feu (point faible) prefere
+    const card = (name, cost, lines, weapon = false) => ({ name, cost, lines, weapon, off: false });
+    const st = { pa: 9, hp: 2717, max: 2717, shield: 0, pow: 0, target: 'El Piko', enemies: [{ i: 0, name: 'El Piko', hp: 3287, max: 3287, prot: 657, rage: false, res: { Neutre: 30, Terre: 20, Feu: 15, Eau: 25, Air: 20 } }],
+      hand: [card('Cubitus', 2, ['14 à 16 vol de vie Eau']), card('Secourisme', 2, ['Soigne 23% des PV max']), card('Eau-de-vie', 2, ['Soigne 22 à 24 (Eau)', '22 à 24 dommages Eau — en zone']), card('Ferveur', 2, ['Bouclier de 50% du niveau (2 tours)', '16 à 19 dommages Eau — en zone']), card('Parafuso', 3, ['21 à 24 vol de vie Eau — en zone']), card('Bâton du Shamansot', 4, ['18 à 25 dommages Feu', '4 à 7 vol de vie Eau'], true)] };
+    const s = { ...NO_STATS, Chance: 200, Intelligence: 50, Puissance: 50, dmg: {} };
+    const mv = bestMove(st, 300, s, false, new Set(), PROFILES.equilibre);
+    const cost = mv.plan.reduce((a, n) => a + st.hand.find((c) => c.name === n).cost, 0);
+    assert.ok(mv && !mv.plan.includes('Secourisme') && cost <= 9 && cost >= 8, JSON.stringify(mv?.plan));
+    const hurt = bestMove({ ...st, hp: 600 }, 900, s, false, new Set(), PROFILES.equilibre);
+    assert.ok(hurt.plan.includes('Secourisme'), JSON.stringify(hurt.plan)); // en danger : soin
+  }
   const it = { fav: false, rarity: 'COMMUN', name: 'Coiffe Bouftou', partial: false };
   assert.deepEqual([canSell(it), canSell({ ...it, rarity: 'RARE' }), canSell({ ...it, name: 'Coiffe Bouftou · Tiers 2' }), canSell({ ...it, name: 'Gelano' }), canSell({ ...it, partial: true }), canSell({ ...it, fav: true })], [true, false, false, false, false, false]);
   setEnergy(0, 200); S.energyAt -= 2.5 * REGEN; assert.equal(energyNow(), 2);
@@ -568,6 +741,8 @@ function startDashboard(page) {
     try {
       if (req.url === '/') return send(200, 'text/html; charset=utf-8', readFileSync('dashboard.html'));
       if (req.url === '/api/state') return send(200, 'application/json', JSON.stringify(snapshot()));
+      // debug lecture seule : texte + controles de la page courante du bot (sans la toucher)
+      if (req.url === '/api/dom') return send(200, 'text/plain; charset=utf-8', page.url() + '\n\n' + (await page.locator('main').innerText().catch(() => '')) + '\n\n=== CONTROLS\n' + (await page.locator('main').locator('button, a, input, select, label').evaluateAll((els) => els.map((e) => `${e.tagName}${e.type ? '[' + e.type + ']' : ''}${e.checked ? ' [x]' : ''}${e.disabled ? ' [disabled]' : ''} "${(e.innerText || e.value || '').replace(/\s+/g, ' ').slice(0, 80)}" ${e.title || e.getAttribute('aria-label') || ''} .${(e.className || '').toString().slice(0, 60)}`).join('\n')).catch((er) => er.message)));
       if (req.url === '/api/events') {
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
         res.write(`retry: 1000\ndata: ${JSON.stringify(snapshot())}\n\n`);
@@ -778,6 +953,7 @@ while (true) {
       if (win && huntLeft > 0 && --huntLeft === 0) backToAdventure = true;
     }
     if (winsSinceStrike >= 30) strikes = 0;
+    if (fightMem.profile) { rewardProfile(fightMem.profile, win, fightMem.turn); const p = S.learn.prof[fightMem.profile]; decide(`Style ${fightMem.profile} : ${win ? 'victoire' : 'defaite'} en ${fightMem.turn} tours (${p.w}/${p.n} gagnes)`); fightMem = { turn: 0, endHp: null, inc: 0, profile: null }; }
     if (fight === 'boss') S.boss = { ...S.boss, live: false, last: win ? 'victoire' : 'defaite' };
     if (fight === 'arene') S.arena = { ...S.arena, last: win ? 'victoire' : 'defaite' };
     S.mode = fight ?? (adventure ? 'aventure' : 'chasse');
@@ -852,7 +1028,13 @@ while (true) {
       continue;
     }
     if (page.url() !== COMBAT) { await page.goto(COMBAT); continue; } // apres boss/deck, revient a l'ecran de fin
-    if (await next.isVisible().catch(() => false)) {
+    const step = page.getByRole('button', { name: 'Étape suivante', exact: true });
+    if (CFG.manualFight && await step.isVisible().catch(() => false)) { // "Suivant en auto" lancerait le combat en Auto
+      decide('Combat suivant en manuel : Etape suivante');
+      await step.click(); autoClicked = false; await sleep(3000);
+    } else if (CFG.manualFight && zone) {
+      await attackGroup(page, zone, strikes ? 0 : CFG.maxGroup);
+    } else if (await next.isVisible().catch(() => false)) {
       decide(`Rien a faire : combat suivant en Auto (passe dans ${CFG.passEvery - (combats % CFG.passEvery)} combats)`);
       await sleep(1000 + Math.random() * 2000);
       await next.click();
@@ -870,10 +1052,14 @@ while (true) {
 
   const auto = page.getByRole('button', { name: 'Auto', exact: true });
   if (!autoClicked && /À toi de jouer/.test(text) && await auto.isEnabled().catch(() => false)) {
-    await sleep(1000 + Math.random() * 2000);
-    await auto.click();
-    autoClicked = true;
-    idleSince = Date.now();
+    if (CFG.manualFight && (await safe('combat', playTurn(page))) === true) idleSince = Date.now(); // tour joue ; le suivant reviendra ici
+    else {
+      if (CFG.manualFight) { log('COMBAT manuel en echec - passe en Auto pour ce combat'); fightMem.profile = null; }
+      await sleep(1000 + Math.random() * 2000);
+      await auto.click();
+      autoClicked = true;
+      idleSince = Date.now();
+    }
   }
 
   // serveur en vrac ou rien ne bouge depuis 30 s : F5
