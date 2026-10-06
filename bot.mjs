@@ -914,8 +914,9 @@ async function hdvBuy(page) {
     const budget = S.kamas - CFG.kamasReserve;
     if (budget <= 0) { log(`HDV : budget nul (reserve ${CFG.kamasReserve})`); return; }
     await page.goto(BASE + '/hdv');
-    await page.getByText(/\d+ offres/).first().waitFor({ timeout: 20000 });
     const main = page.locator('main');
+    await main.locator('select').first().waitFor({ timeout: 20000 });
+    writeFileSync('dump/hdv_page.txt', await main.innerText().catch(() => '')); // interface changeante : derniere page vue
     // nouvelle interface (06/10) : "Equipables par moi" coche, tri prix croissant, pastille du type
     const mine = page.getByLabel(/Équipables par moi/);
     if (await mine.count() && !(await mine.isChecked().catch(() => true))) await mine.check().catch(() => {});
@@ -1459,6 +1460,14 @@ async function startAbyss(page) {
   return true;
 }
 async function abyssChoice(page, text) {
+  // victoire d'etage : lien "Choisir ma recompense" sous le combat termine (le titre "Les Abysses · Tour N" reste affiche)
+  const reward = page.locator('main').locator('a, button').filter({ hasText: /^\s*Choisir (ma|mes) r[ée]compenses?\s*$/i }).first();
+  if (await reward.isVisible().catch(() => false)) {
+    const fl = text.match(/Étage (\d+) des Abysses franchi/)?.[1];
+    if (fl) { S.abyssRun ??= { start: Date.now(), floors: 0, bonus: {}, picks: [] }; S.abyssRun.floors = Math.max(S.abyssRun.floors ?? 0, +fl); S.abyssRun.start = Date.now(); }
+    await reward.click().catch(() => {}); log(`ABYSSES etage ${fl ?? '?'} franchi : choix de la recompense`); decide(`Abysses : etage ${fl ?? '?'} franchi, je choisis ma recompense`);
+    return true;
+  }
   const inRun = S.abyssRun && Date.now() - S.abyssRun.start < 3 * 3600000;
   if (!/\/abysses/i.test(page.url()) && !(inRun && /carte bonus|Choisis|choisir|nouveau sort|Étage \d+/i.test(text))) return false; // le menu contient "Abysses" sur toutes les pages
   const gameTxt = await page.locator('main').innerText().catch(() => '');
