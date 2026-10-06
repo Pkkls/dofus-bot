@@ -201,7 +201,7 @@ const invScore = (detail) => {
 
 // Inventaire : par type, filtre "Equipables", score chaque objet, equipe le meilleur s'il bat la piece portee
 // objets de la grille : bouton avec image, texte limite a un badge (nb d'exemplaires, FUSION, etoile) ; exclut les emplacements portes ("Chapeau"...)
-const invItems = (main) => main.locator('button:has(img)').filter({ hasNotText: /\b(?!FUSION\b)[A-Za-zÀ-ÿ]{3,}/ });
+const invItems = (main) => main.locator('button:has(img)').filter({ hasNotText: /\b(?!FUSION\b|niv\b)[A-Za-zÀ-ÿ]{3,}/ }); // case d'objet : image + badges ("FUSION", "niv. 12" depuis le 07/10)
 const SLOTS = ['Chapeau', 'Cape', 'Amulette', 'Anneau', 'Ceinture', 'Bottes', 'Arme', 'Bouclier', 'Familier', 'Dofus / Trophée'];
 // Vente : pas d'anneau (2 emplacements, la comparaison ne voit qu'un anneau), ni familier, ni Dofus/Trophee
 // bouton de l'etape d'aventure : "Combattre", ou "Affronter le boss" sur une etape de boss
