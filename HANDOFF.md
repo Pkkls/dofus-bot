@@ -60,14 +60,16 @@ Le site affiche un test de presence ("Es-tu toujours la ? Clique sur le chiffre 
 - Ne jamais editer `run.cmd` pendant qu'il tourne (cmd relit le .bat) : `Stop-ScheduledTask dofus-bot` d'abord.
 - `bot.log` reecrit sous Windows peut contenir des \r\n : le parseur les tolere.
 
-## En cours au moment du handoff
+## Derniere verification (2026-10-06, 01h20 UTC)
 
-- Le bot tourne (tache planifiee). Une passe d'inventaire avec les gardes `openItem` vient d'etre lancee : verifier dans bot.log qu'il n'y a plus de permutation d'anneaux en boucle ni de "ERREUR vente ... introuvable" en serie, et mesurer la duree de la passe (elle prenait jusqu'a 10 min avant l'optimisation de la fusion).
-- Coffres cadeaux : verifies (5 ouverts d'un coup le 06/10).
+- Passe de gestion complete en 61 s (contre ~10 min avant les gardes `openItem` et la fusion limitee au badge FUSION), 0 erreur, ventes reelles.
+- Anneaux : paire optimale stable (Alliance des Forestiers 123, Anneau Ouroboulos 107), plus de permutation en boucle ; reserve = anneaux de niveau >= niveau - spareWindow.
+- Chaque type d'objet ne traite que les objets dont le panneau indique le meme emplacement (`sameSlot`), meme si le filtre de type n'est pas encore applique.
+- Coffres cadeaux ouverts.
 
 ## A faire ensuite
 
-1. Confirmer en reel : anneaux sans boucle, fusion (badge FUSION), duree de la passe d'inventaire.
+1. Confirmer en reel une fusion (aucun objet eligible pour l'instant : il faut 3 exemplaires au moins aussi bons que la piece portee).
 2. HDV : vente des objets Epique+ inutiles et achat d'ameliorations pour emplacements occupes (l'HDV ne montre pas de comparaison : il faudrait comparer au score propre de la piece portee).
 3. Dofus/Trophees (6 emplacements) et familiers : meme approche que les anneaux.
 4. Rattrapage d'aventure progressif si l'etape bloque encore apres huntWins victoires.

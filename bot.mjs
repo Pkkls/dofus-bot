@@ -158,7 +158,7 @@ const parseDetail = (t) => {
   if (!m) return null;
   const detail = t.slice(m.index);
   const own = scoreItem(detail.match(/\nNiveau \d+\n([\s\S]*?)\nExemplaires/)?.[1] ?? '');
-  return { name: m[2].trim(), fav: !!m[1], rarity: m[3], level: +m[5], own, diff: invScore(detail), cmp: detail.match(/Comparé à ([^\n]+)/)?.[1] ?? null };
+  return { name: m[2].trim(), fav: !!m[1], rarity: m[3], slot: m[4].trim(), level: +m[5], own, diff: invScore(detail), cmp: detail.match(/Comparé à ([^\n]+)/)?.[1] ?? null };
 };
 async function equipFromInventory(page) {
   await page.goto(BASE + '/inventaire');
@@ -195,7 +195,7 @@ async function equipFromInventory(page) {
     // ponytail: 25 objets max par type ; trier par niveau d'abord si l'inventaire grossit
     for (let i = 0; i < Math.min(await items.count(), 25); i++) {
       const d = await openItem(main, items.nth(i));
-      if (!d || !(await main.getByRole('button', { name: /^Équiper/ }).first().isEnabled().catch(() => false))) continue;
+      if (!d || !sameSlot(d.slot, slot) || !(await main.getByRole('button', { name: /^Équiper/ }).first().isEnabled().catch(() => false))) continue; // filtre pas encore applique : objet d'un autre type ignore
       seen.push({ i, ...d });
       if (d.diff > best) { best = d.diff; bestIdx = i; bestName = d.name; }
       if (d.diff < 0 && SELLABLE.includes(slot) && SELL_RARITY.has(d.rarity) && !d.fav) junk.push([d.name, d.diff]);
@@ -223,6 +223,7 @@ async function openItem(main, item) {
   }
   return null;
 }
+const sameSlot = (a, b) => a === b || b.includes(a) || a.includes(b); // "Dofus / Trophée" peut s'afficher "Trophée"
 const baseName = (n) => n.replace(/ · (Tiers \d+|Rayonnant)$/, ''); // texte de l'image = nom sans le tiers
 
 // Anneaux : 2 emplacements, le jeu compare toujours a l'anneau 1 mais propose "Equiper a la place de X (Anneau 1|2)".
@@ -234,7 +235,7 @@ async function optimizeRings(page, main) {
     const out = [];
     for (let i = 0; i < Math.min(await items.count(), 60); i++) {
       const d = await openItem(main, items.nth(i));
-      if (!d || !(await main.getByRole('button', { name: /^Équiper/ }).first().isEnabled().catch(() => false))) continue;
+      if (!d || !sameSlot(d.slot, 'Anneau') || !(await main.getByRole('button', { name: /^Équiper/ }).first().isEnabled().catch(() => false))) continue;
       S.rings[d.name] = d.own;
       if (d.cmp) S.rings[d.cmp] = d.own - d.diff;
       out.push({ i, ...d });
@@ -487,7 +488,8 @@ if (process.argv[2] === 'test') {
   assert.ok(invScore('X\nNiveau 41\n+20 Vitalité\n+30 Force\n\nExemplaires : 1') > 0); // slot libre
   ELEM_SHARE = { Neutre: 0, Terre: 0.25, Feu: 0, Eau: 0.75, Air: 0 }; assert.equal(mainStat(), 'Chance');
   const PD = parseDetail('Initiative\n2\n4\nFUSION\n2\n★\nClique sur un objet\n★\nAnneau Zest\nRARE\nAnneau\nNiveau 70\n+30 Vitalité\n+20 Chance\n\nExemplaires : 2 · revente 900 K\n\nÉquiper à la place de Bague de Boufbowl\nComparé à Bague de Boufbowl\n+10 Vitalité\n-5 Chance\nFusionner 3');
-  assert.deepEqual([PD.name, PD.fav, PD.rarity, PD.level, PD.cmp], ['Anneau Zest', true, 'RARE', 70, 'Bague de Boufbowl']);
+  assert.deepEqual([PD.name, PD.fav, PD.rarity, PD.slot, PD.level, PD.cmp], ['Anneau Zest', true, 'RARE', 'Anneau', 70, 'Bague de Boufbowl']);
+  assert.ok(sameSlot('Trophée', 'Dofus / Trophée') && !sameSlot('Anneau', 'Chapeau'));
   assert.ok(PD.own > PD.diff && PD.diff > 0);
   const G = 'Groupe 1\nMoyen\nA\nGroupe 2\nDifficile\nB\nGroupe 3\nTrès difficile\nC\n';
   assert.deepEqual([pickGroup(G, 0), pickGroup(G, 1), pickGroup(G, 2), pickGroup(G, 3)], [0, 0, 1, 2]);
