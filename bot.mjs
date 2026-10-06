@@ -183,7 +183,7 @@ const SELLABLE = ['Chapeau', 'Cape', 'Amulette', 'Ceinture', 'Bottes', 'Arme', '
 const SELL_RARITY = new Set(['COMMUN', 'PEU COMMUN']); // RARE et au-dessus : jamais vendus
 // vente prudente, dans le doute on garde : favori, rarete RARE+, tiers fusionne ou Rayonnant, liste NEVER_SELL, comparaison incomplete
 const NEVER_SELL = ['Gelano', 'Molosk', 'Mollosk']; // Molosk (familier) : objet garde au prestige // noms de base (sans tiers) des objets rares a garder quoi qu'il arrive
-const canSell = (d) => !d.fav && SELL_RARITY.has(d.rarity) && !/ · (Tiers \d+|Rayonnant)$/.test(d.name) && !NEVER_SELL.includes(baseName(d.name)) && !d.partial;
+const canSell = (d) => !d.fav && SELL_RARITY.has(d.rarity) && !/ · Tiers \d+$/.test(d.name) && !/Rayonnant/i.test(d.name) && !NEVER_SELL.includes(baseName(d.name)) && !d.partial;
 // panneau de detail : "Nom / RARETE / Emplacement / Niveau N / stats / Exemplaires..." ; on prend la derniere occurrence (la grille au-dessus contient des badges)
 const parseDetail = (t) => {
   const all = [...t.matchAll(/(?:^|\n)(★\n)?([^\n]+)\n(COMMUN|PEU COMMUN|RARE|ÉPIQUE|MYTHIQUE|LÉGENDAIRE)\n([^\n]+)\nNiveau (\d+)\n/g)];
@@ -212,6 +212,7 @@ async function equipFromInventory(page) {
       const fd = await openItem(main, fusable.nth(i));
       const fuse = main.getByRole('button', { name: /^Fusionner 3/ });
       if (!fd || !(await fuse.isEnabled().catch(() => false))) continue;
+      if (/Rayonnant/i.test(fd.name)) continue; // Rayonnant : tres rare, jamais consomme en fusion
       if (fd.diff < 0) continue; // ponytail: le moins bon part chez le marchand, 3 ventes > 1 fusion
       await fuse.click();
       const ok = main.getByRole('button', { name: /^Confirmer/ }); // meme schema en 2 clics que la vente, si present
@@ -976,7 +977,7 @@ if (process.argv[2] === 'test') {
   { const saved = [S.learn, S.level]; S.level = 120; S.learn = { build: { minHp: 0.9, loss: 0, n: 20 } }; assert.ok(wisdomShareNow() > CFG.wisShare);
     S.learn = { build: { minHp: 0.3, loss: 0.2, n: 20 } }; assert.equal(wisdomShareNow(), 0); S.level = 200; S.learn = {}; assert.equal(wisdomShareNow(), 0); [S.learn, S.level] = saved; }
   const it = { fav: false, rarity: 'COMMUN', name: 'Coiffe Bouftou', partial: false };
-  assert.deepEqual([canSell(it), canSell({ ...it, rarity: 'RARE' }), canSell({ ...it, name: 'Coiffe Bouftou · Tiers 2' }), canSell({ ...it, name: 'Gelano' }), canSell({ ...it, partial: true }), canSell({ ...it, fav: true })], [true, false, false, false, false, false]);
+  assert.deepEqual([canSell(it), canSell({ ...it, rarity: 'RARE' }), canSell({ ...it, name: 'Coiffe Bouftou · Tiers 2' }), canSell({ ...it, name: 'Gelano' }), canSell({ ...it, partial: true }), canSell({ ...it, fav: true }), canSell({ ...it, name: 'Coiffe Bouftou · Rayonnant' })], [true, false, false, false, false, false, false]);
   setEnergy(0, 200); S.energyAt -= 2.5 * REGEN; assert.equal(energyNow(), 2);
   spendEnergy(1); assert.equal(energyNow(), 1); S.energyAt -= 0.5 * REGEN; assert.equal(energyNow(), 2); // le point en cours de recharge est garde
   setEnergy(199); S.energyAt -= 5 * REGEN; assert.equal(energyNow(), 200);
