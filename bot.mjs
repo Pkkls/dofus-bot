@@ -300,6 +300,8 @@ async function equipFromInventory(page) {
 async function openItem(main, item) {
   const alt = (await item.locator('img').first().getAttribute('alt').catch(() => null))?.trim();
   if (!alt) return null;
+  const cur = parseDetail(await main.innerText().catch(() => ''));
+  if (cur && (cur.name === alt || cur.name.startsWith(alt + ' '))) return cur; // deja ouverte : un 2e clic la refermerait (07/10)
   await item.click({ timeout: 5000 }).catch(() => {});
   for (let k = 0; k < 10; k++) {
     await sleep(150);
