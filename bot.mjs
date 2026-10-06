@@ -1407,7 +1407,7 @@ while (true) {
   if (gameText !== lastText) { // la page bouge = pas bloque ; si une action de deblocage vient d'etre tentee, elle a marche
     lastText = gameText; idleSince = Date.now();
     // reussite seulement si l'ecran a vraiment change (autre signature) : un F5 qui recharge le meme ecran ne compte pas
-    if (unblockPending && Date.now() - unblockPending.at < 30000 && screenSig(page.url(), gameText) !== unblockPending.sig) {
+    if (unblockPending && Date.now() - unblockPending.at < 30000 && gameText.trim().length > 40 && screenSig(page.url(), gameText) !== unblockPending.sig) { // page chargee (pas l'ecran vide d'un rechargement)
       const U = (((S.learn ??= {}).unblock ??= {})[unblockPending.sig] ??= {})[unblockPending.act] ??= { ok: 0, ko: 0 };
       U.ok++; log(`DEBLOCAGE appris : "${unblockPending.sig}" -> ${unblockPending.act} (${U.ok}/${U.ok + U.ko})`);
       decide(`Deblocage : sur "${unblockPending.sig}", l'action "${unblockPending.act}" a marche, je la retiens`);
