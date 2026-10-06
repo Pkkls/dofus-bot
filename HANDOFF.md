@@ -96,3 +96,7 @@ Le jeu permet un prestige : retour niveau 1, sorts et inventaire perdus, un obje
 ## Ecran d'inactivite (06/10)
 
 "Tu etais inactif, ta place a ete liberee, progression sauvegardee" (10 min sans clic) n'est pas le test de presence : le bot attend `gate()` (energie, plage horaire) puis recharge /combat pour reprendre sa place, sans cliquer dans l'ecran. Le test de presence "Es-tu toujours la ?" reste manuel (alerte, jamais clique).
+
+## Optimisation moteur (06/10 apres-midi)
+
+Bilan avant : 51/51 victoires depuis 13:50 (~186/189 au total), 2,3 cartes/tour, ~36 s entre deux fins de combat. Ajouts : regle `healHurtFrom` (indice Sphincter Cell "a partir du tour 4, vos soins vous blessaient" : soins et vol de vie comptes negatifs), capture d'indice stricte (ligne "Indice" seulement, l'arene n'en donne pas), montee de zone sur taux de victoire cible `targetWin` (0.85, fenetre 20 combats, demande de kil : pas 100 %, garder une marge), anneau verrouille au prestige contourne (emplacement remplacable seulement).
