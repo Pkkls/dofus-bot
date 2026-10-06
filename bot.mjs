@@ -97,7 +97,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['ownScore', 'equipLog', 'hdvBought', 'rushAsc', 'ascBest', 'seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['passLog', 'ownScore', 'equipLog', 'hdvBought', 'rushAsc', 'ascBest', 'seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -1331,16 +1331,20 @@ async function visitForge(page) {
 // Coffres d'abord (nouveaux objets/cartes), puis deck, stuff, caracs ; au demarrage et tous les CFG.passEvery combats
 async function managePass(page) {
   S.status = 'gestion';
+  const t0 = Date.now(), T = {}, step = async (k, p) => { const t = Date.now(); const r = await safe(k, p); T[k] = (T[k] ?? 0) + Math.round((Date.now() - t) / 1000); return r; }; // duree par etape
   decide('Passe de gestion : coffres, puis deck, puis stuff (equiper, fusionner, vendre), HDV, caracs');
-  await safe('coffres', openChests(page));
-  await safe('deck', optimizeDeck(page));
-  await safe('inventaire', equipFromInventory(page));
-  if ((await safe('hdv', hdvBuy(page))) > 0) await safe('inventaire', equipFromInventory(page)); // equipe les achats tout de suite
-  await safe('carac', allocateStats(page));
+  await step('coffres', openChests(page));
+  await step('deck', optimizeDeck(page));
+  await step('inventaire', equipFromInventory(page));
+  if ((await step('hdv', hdvBuy(page))) > 0) await step('inventaire', equipFromInventory(page)); // equipe les achats tout de suite
+  await step('carac', allocateStats(page));
   for (const k of ['coffres', 'deck', 'inventaire', 'hdv', 'carac']) S.last[k] = Date.now();
   if (!ZONES) await safe('zones', allZones(page)); // niveaux des zones pour le garde-fou (une fois par lancement)
   if (!S.last.forge) await safe('forge', visitForge(page)); // 1re visite : Bouclier de forge offert
-  else await safe('forge', forgeUpgrade(page));
+  else await step('forge', forgeUpgrade(page));
+  const dur = Math.round((Date.now() - t0) / 1000);
+  log(`PASSE gestion ${dur} s (${Object.entries(T).map(([k, v]) => `${k} ${v}`).join(', ')})`);
+  (S.passLog ??= []).push({ t: Date.now(), dur, ...T }); if (S.passLog.length > 50) S.passLog.shift();
   await page.goto(COMBAT);
 }
 
