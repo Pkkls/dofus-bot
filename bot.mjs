@@ -1913,6 +1913,10 @@ while (true) {
       nextBossCheck = Date.now() + (r > 0 ? r + 5000 : 150000); // juste apres l'arrivee annoncee, sinon dans 2.5 min
     }
     if (S.recharging) { if (page.url() !== COMBAT) await page.goto(COMBAT); await sleep(1000); continue; } // recharge : rien d'autre que le boss, attente sur l'ecran de fin
+    if (rushing() && S.level >= 200 && Date.now() > rushNext) { // rush : au 200 l'XP ne sert plus, prestige (ou Ascension exigee) avant toute chasse
+      xpHard = false; S.xpHard = false;
+      if ((await safe('prestige', rushPrestige(page))) === true) continue;
+    }
     // arene toutes les CFG.arenaEvery minutes, si assez d'energie et un adversaire plus faible
     if (CFG.arenaEvery > 0 && !rushing() && Date.now() - lastArena > CFG.arenaEvery * 60000) {
       lastArena = S.last.arene = Date.now();
