@@ -1371,6 +1371,7 @@ while (true) {
   if (/Victoire !|Défaite/.test(text) && !/À toi de jouer/.test(text) && (fight || await endBtn.first().isVisible().catch(() => false))) { // boss/arene : ecran de fin peut-etre sans bouton connu
     if (!endHandled) {
     endHandled = true;
+    if (!fight && /Retour à l.arène/.test(text)) fight = 'arene'; // apres un redemarrage, l'ecran de fin dit si c'etait l'arene
     paced = false; throwChecked = false; unblockTried.clear();
     if (++combats % CFG.passEvery === 0) deckDue = true;
     const win = /Victoire !/.test(text) && !/Défaite/.test(text);
