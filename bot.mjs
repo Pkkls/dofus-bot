@@ -1291,7 +1291,7 @@ await managePass(page);
 let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastText = '', combats = 0;
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
-let clickFails = [], myWaitSince = 0, satStreak = 0; // clics expires recents (fenetre inconnue) ; debut d'un "Tour de moi..." fige
+let clickFails = [], myWaitSince = 0, satStreak = 0, inQueue = false; // clics expires recents (fenetre inconnue) ; debut d'un "Tour de moi..." fige
 // XP hard (bouton) : plus gros groupes, palier suivant a chaque victoire, 1re defaite -> un cran plus bas puis montee normale
 // Deblocage appris (S.learn.unblock[signature][action] = { ok, ko }) : page figee 30 s -> une action sure a la fois, la meilleure connue d'abord.
 // Jamais : achats/ventes/brisage, fuite, deconnexion, guilde, reinitialisation, Discord, test de presence (traite avant).
@@ -1388,6 +1388,16 @@ while (true) {
   }
   satStreak = 0;
 
+  // file d'attente (serveur plein, "garde cette page ouverte") : surtout ne rien recharger ni naviguer, sinon la place est perdue
+  if (/File d.attente|Le serveur est plein/i.test(text)) {
+    const pos = text.match(/(\d+)\s*[ᵉe]\s*\n/)?.[1] ?? text.match(/(\d+) joueurs en attente/)?.[1] ?? '?';
+    if (!inQueue) { inQueue = true; S.queueAt = Date.now(); decide(`File d'attente (serveur plein) : position ${pos}, j'attends sans toucher a la page`); log(`FILE d'attente - position ${pos}`); }
+    S.status = 'file'; S.queuePos = pos;
+    idleSince = Date.now(); // pas de deblocage ni de F5 pendant l'attente
+    await sleep(5000);
+    continue;
+  }
+  if (inQueue) { inQueue = false; log(`FILE d'attente terminee - place obtenue apres ${Math.round((Date.now() - S.queueAt) / 1000)} s`); decide('File d\'attente terminee : place obtenue, je reprends'); S.queuePos = null; }
   // ecran d'inactivite ("Tu etais inactif", place liberee, progression sauvegardee) : pas un controle anti-bot, juste un slot rendu.
   // On attend d'avoir le droit de jouer (energie, plage horaire) puis on recharge la page pour reprendre sa place, sans cliquer dedans.
   if (/Tu étais inactif|ta place a été libérée/i.test(text)) {
@@ -1697,6 +1707,8 @@ while (true) {
         alert('clics bloques : fenetre inconnue (anti-AFK ?), regarde la fenetre du bot'); await page.bringToFront().catch(() => {});
       }
     }
-    await sleep(5000); await page.goto(COMBAT).catch(() => {}); autoClicked = false; idleSince = Date.now();
+    await sleep(5000);
+    if (!/File d.attente|Le serveur est plein/i.test(await page.locator('body').innerText().catch(() => ''))) await page.goto(COMBAT).catch(() => {}); // en file : surtout pas de navigation
+    autoClicked = false; idleSince = Date.now();
   }
 }

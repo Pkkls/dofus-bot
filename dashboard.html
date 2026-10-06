@@ -60,7 +60,7 @@ button { font: inherit; color: inherit; }
 .pill.combat { color: var(--accent); background: var(--accent-soft); }
 .pill.combat .dot { animation: pulse var(--dur-pulse) ease-in-out infinite; }
 .pill.gestion { color: var(--info); background: var(--info-soft); }
-.pill.pause, .pill.rate-limit, .pill.demarrage, .pill.throttle, .pill.repos, .pill.plafond, .pill.recharge { color: var(--warn); background: var(--warn-soft); }
+.pill.pause, .pill.rate-limit, .pill.demarrage, .pill.throttle, .pill.repos, .pill.plafond, .pill.recharge, .pill.file { color: var(--warn); background: var(--warn-soft); }
 .pill.presence, .pill.offline { color: var(--danger-ink); background: var(--danger); }
 @keyframes pulse { 50% { opacity: .3; } }
 .grow { flex: 1; }
@@ -505,7 +505,7 @@ const tok = (n) => getComputedStyle(document.documentElement).getPropertyValue(n
 const ELEM = { Terre: 'var(--el-terre)', Feu: 'var(--el-feu)', Eau: 'var(--el-eau)', Air: 'var(--el-air)', Neutre: 'var(--el-neutre)' };
 const TIME_KEYS = new Set(['activeFrom', 'activeTo']);
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-const STATUS = { repos: 'Repos (hors plage)', recharge: 'Recharge energie', plafond: 'Plafond atteint', combat: 'En combat', gestion: 'Gestion', pause: 'En pause', throttle: 'Ralenti (limiteur)', presence: 'Presence requise', 'rate-limit': 'Serveur sature', demarrage: 'Demarrage', offline: 'Bot hors ligne' };
+const STATUS = { repos: 'Repos (hors plage)', recharge: 'Recharge energie', file: "File d'attente", plafond: 'Plafond atteint', combat: 'En combat', gestion: 'Gestion', pause: 'En pause', throttle: 'Ralenti (limiteur)', presence: 'Presence requise', 'rate-limit': 'Serveur sature', demarrage: 'Demarrage', offline: 'Bot hors ligne' };
 const MODE = { aventure: 'Aventure (Chemin)', chasse: 'Chasse', boss: 'Boss de zone', arene: 'Arene' };
 const CFG_META = {
   vitShare: ['Part en Vitalite', 'de 0 a 1, le reste dans l\'element du deck', 0, 1, 0.05],
