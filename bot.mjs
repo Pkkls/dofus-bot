@@ -503,9 +503,18 @@ async function allocateStats(page) {
     if (n <= 0) continue;
     if (oldUi) { await old.fill(String(n)); await old.locator('xpath=following::button[normalize-space()="Ajouter"][1]').click(); }
     else {
-      if (n >= max) await maxBtn.click(); // "max" prepare tout le possible
-      else { const plus = page.locator('main').getByRole('button', { name: /^\+1$/ }).nth(k); for (let j = 0; j < n; j++) { await plus.click(); await sleep(80); } } // "+1" n fois
-      await page.locator('main').getByRole('button', { name: /^Ajouter$/ }).nth(k).click();
+      // fiche du 07/10 : un champ "Nombre" par carac, un bouton de validation commun en bas a droite
+      const box = page.locator('main').getByPlaceholder('Nombre').nth(k);
+      if (await box.count()) await box.fill(String(n)); else if (n >= max) await maxBtn.click();
+      const perStat = page.locator('main').getByRole('button', { name: /^Ajouter$/ });
+      if (await perStat.count() > k) await perStat.nth(k).click();
+      else {
+        const go = page.locator('main').getByRole('button', { name: /^(Valider|Appliquer|Confirmer|Répartir|Ajouter|Investir)/i }).last();
+        if (!existsSync('dump/carac.txt')) writeFileSync('dump/carac.txt', `${await page.locator('main').innerText().catch(() => '')}\n\n=== CONTROLES\n${await controls(page.locator('main'))}`);
+        const lbl = (await go.innerText({ timeout: 5000 }).catch(() => '')).replace(/\s+/g, ' ').trim();
+        if (!lbl) { log('CARAC bouton de validation introuvable (dump/carac.txt)'); break; }
+        await go.click(); log(`CARAC valide par "${lbl}"`);
+      }
     }
     await sleep(1500);
     log(`CARAC +${n} ${stat}`);
