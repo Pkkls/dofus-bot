@@ -1385,7 +1385,7 @@ async function managePass(page) {
   await step('coffres', openChests(page));
   await step('deck', optimizeDeck(page));
   await step('inventaire', equipFromInventory(page));
-  if (!S.emptySlots?.length && Date.now() - (S.last.hdv ?? 0) < 3600000) T.hdv = 0; // HDV : ~40 s pour rarement mieux, 1 fois par heure sauf emplacement vide
+  if ((S.kamas ?? 0) - CFG.kamasReserve <= 0 || (!S.emptySlots?.length && Date.now() - (S.last.hdv ?? 0) < 3600000)) T.hdv = 0; // pas de budget : rien a acheter // HDV : ~40 s pour rarement mieux, 1 fois par heure sauf emplacement vide
   else { S.last.hdv = Date.now(); if ((await step('hdv', hdvBuy(page))) > 0) await step('inventaire', equipFromInventory(page)); } // equipe les achats tout de suite
   await step('carac', allocateStats(page));
   for (const k of ['coffres', 'deck', 'inventaire', 'carac']) S.last[k] = Date.now();
