@@ -98,7 +98,7 @@ const scoreItem = (txt) => txt.split('\n').reduce((s, l) => {
 const ELEM_STAT = { Neutre: 'Force', Terre: 'Force', Feu: 'Intelligence', Eau: 'Chance', Air: 'Agilité' };
 const parseCard = (txt) => {
   const cost = +txt.match(/^\s*(\d+)/)?.[1];
-  const name = txt.replace(/^\s*\d+\s*/, '').split(/\s\d+ à \d+|\s[+-]\d|\s(Soigne|Bouclier|Vole)\b/)[0].trim();
+  const name = txt.replace(/^\s*\d+\s*/, '').split('\n')[0].split(/\s\d+ à \d+|\s[+-]\d|\s(Soigne|Bouclier|Vole)\b/)[0].trim(); // 1re ligne : "Tornabombe\nBombe : ..."
   const d = txt.match(/(\d+) à (\d+) (dommages|vol de vie) (\w+)/);
   return { cost, name, dmg: d ? { avg: (+d[1] + +d[2]) / 2, elem: d[4], steal: d[3] !== 'dommages', zone: /en zone/.test(txt) } : null };
 };
@@ -752,6 +752,7 @@ if (process.argv[2] === 'test') {
   setEnergy(199); S.energyAt -= 5 * REGEN; assert.equal(energyNow(), 200);
   assert.deepEqual(parseJeu('Ouvrir un coffre\nÉnergie\n1/100\n\n+1 dans 2 min 13 · 1 par combat, 2 en arène\n\nAcheter (300 K le point, encore 1000 aujourd’hui) :\n+1 · 300 K'),{ e: 1, max: 100, next: 133000, price: 300, left: 1000 });
   assert.equal(parseCard('4 Ronces Agressives 24 à 27 dommages Terre RARE').name, 'Ronces Agressives');
+  assert.equal(parseCard('3\nTornabombe\nBombe : 20 à 22 dommages Air\nRARE').name, 'Tornabombe');
   assert.equal(parseCard('1 Tirs Puissants +100 Puissance (1 tour) +10 % Critique (1 tour) CLASSE').dmg, null);
   assert.equal(parseCard('3 Flèche Glacée -2 PA à la cible 12 à 14 dommages Eau COMMUN').name, 'Flèche Glacée');
   const deck = ['1 Tirs Puissants +100 Puissance', '3 Roulage de Pelle 11 à 13 dommages Feu', ...Array.from({ length: 8 }, (_, i) => `3 C${i} 20 à 22 dommages Terre`)].map(parseCard);
