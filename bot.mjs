@@ -97,7 +97,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['rushAsc', 'ascBest', 'seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['hdvBought', 'rushAsc', 'ascBest', 'seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -929,7 +929,7 @@ async function hdvBuy(page) {
     const rowOf = (r) => main.getByText(r.raw, { exact: true }).nth(all.filter((x) => x.raw === r.raw && x.idx < r.idx).length)
       .locator('xpath=ancestor::*[.//button[normalize-space()="Acheter" or normalize-space()="Trop cher"]][1]');
     let best = null;
-    for (const r of all.filter((x) => x.buyable && x.level <= S.level && x.price <= budget).sort((a, b) => a.price - b.price).slice(0, 15)) {
+    for (const r of all.filter((x) => x.buyable && x.level <= S.level && x.price <= budget && !(S.hdvBought ?? []).includes(x.name)).sort((a, b) => a.price - b.price).slice(0, 15)) {
       const row = rowOf(r);
       if (await row.locator('button:has(img)').count()) await row.locator('button:has(img)').first().click().catch(() => {}); // ouvre les stats de l'objet
       else await main.getByText(r.raw, { exact: true }).nth(all.filter((x) => x.raw === r.raw && x.idx < r.idx).length).click().catch(() => {});
@@ -967,7 +967,7 @@ async function hdvBuy(page) {
       break;
       continue;
     }
-    S.kamas = k1;
+    S.kamas = k1; (S.hdvBought ??= []).push(best.r.name); if (S.hdvBought.length > 40) S.hdvBought.shift(); // jamais deux fois le meme objet
     log(`HDV achat ${slot}: ${best.r.name} niv ${best.r.level} (gain +${Math.round(best.s)}, ${best.r.price} K, kamas ${k0} -> ${k1})`);
     bought++;
   }
@@ -1462,8 +1462,16 @@ async function startAbyss(page) {
   log('ABYSSES descente lancee');
   return true;
 }
+// fin de descente : on credite les choix avec l'etage atteint (apprentissage)
+const abyssEnd = () => {
+  log(`ABYSSES fin de descente (${S.abyssRun?.floors ?? '?'} etages)`); decide(`Abysses : descente terminee apres ${S.abyssRun?.floors ?? '?'} etages`);
+  (S.learn ??= {}).abyssBest = Math.max(S.learn.abyssBest ?? 0, S.abyssRun?.floors ?? 0);
+  for (const k of new Set(S.abyssRun?.picks ?? [])) { const p = ((S.learn.abyssPicks ??= {})[k] ??= { n: 0, floors: 0 }); p.n++; p.floors += S.abyssRun?.floors ?? 0; }
+  S.abyssRun = null;
+};
 async function abyssChoice(page, text) {
   if (S.abyssRun) { S.abyssRun.picks ??= []; S.abyssRun.bonus ??= {}; } // descente persistee par une ancienne version
+  if (S.abyssRun && /\/abysses/.test(page.url()) && /Prêt à plonger/.test(text) && !/DESCENTE EN COURS/.test(text)) { abyssEnd(); return false; } // accueil revenu : descente finie (defaite non vue, ex. redemarrage)
   // victoire d'etage : lien "Choisir ma recompense" sous le combat termine (le titre "Les Abysses · Tour N" reste affiche)
   const reward = page.locator('main').locator('a, button').filter({ hasText: /^\s*Choisir (ma|mes) r[ée]compenses?\s*$/i }).first();
   if (await reward.isVisible().catch(() => false)) {
@@ -1788,7 +1796,7 @@ while (true) {
     if (fightMem.profile) { rewardProfile(fightMem.profile, win, fightMem.turn); const p = S.learn.prof[fightMem.profile]; decide(`Style ${fightMem.profile} : ${win ? 'victoire' : 'defaite'} en ${fightMem.turn} tours (${p.w}/${p.n} gagnes)`); fightMem = { turn: 0, endHp: null, inc: 0, profile: null }; }
     if (fight === 'boss') S.boss = { ...S.boss, live: false, last: win ? 'victoire' : 'defaite' };
     if (fight === 'arene') S.arena = { ...S.arena, last: win ? 'victoire' : 'defaite' };
-    if (fight === 'abysses') { if (win && S.abyssRun) S.abyssRun.floors++; else if (!win) { log(`ABYSSES fin de descente (${S.abyssRun?.floors ?? '?'} etages)`); decide(`Abysses : descente terminee apres ${S.abyssRun?.floors ?? '?'} etages`); (S.learn ??= {}).abyssBest = Math.max(S.learn.abyssBest ?? 0, S.abyssRun?.floors ?? 0); for (const k of new Set(S.abyssRun?.picks ?? [])) { const p = ((S.learn.abyssPicks ??= {})[k] ??= { n: 0, floors: 0 }); p.n++; p.floors += S.abyssRun?.floors ?? 0; } S.abyssRun = null; } }
+    if (fight === 'abysses') { if (win && S.abyssRun) S.abyssRun.floors++; else if (!win) abyssEnd(); }
     if (fight === 'arene' && !win && S.arenaFoe) { ((S.learn ??= {}).arenaAvoid ??= {})[S.arenaFoe] = { lvl: S.level, deck: deckKey() }; decide(`Arene : ${S.arenaFoe} m'a battu ou bloque, je l'evite jusqu'a +3 niveaux ou un nouveau deck`); }
     S.mode = fight ?? (adventure ? 'aventure' : 'chasse');
     fight = null;
