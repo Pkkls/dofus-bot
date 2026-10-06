@@ -1460,6 +1460,7 @@ async function startAbyss(page) {
   return true;
 }
 async function abyssChoice(page, text) {
+  if (S.abyssRun) { S.abyssRun.picks ??= []; S.abyssRun.bonus ??= {}; } // descente persistee par une ancienne version
   // victoire d'etage : lien "Choisir ma recompense" sous le combat termine (le titre "Les Abysses · Tour N" reste affiche)
   const reward = page.locator('main').locator('a, button').filter({ hasText: /^\s*Choisir (ma|mes) r[ée]compenses?\s*$/i }).first();
   if (await reward.isVisible().catch(() => false)) {
