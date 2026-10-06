@@ -926,7 +926,9 @@ async function hdvBuy(page) {
     if (budget <= 0) { log(`HDV : budget nul (reserve ${CFG.kamasReserve})`); return; }
     await page.goto(BASE + '/hdv');
     const main = page.locator('main');
-    await main.locator('select').first().waitFor({ timeout: 20000 });
+    if (!(await main.locator('select').first().waitFor({ timeout: 20000 }).then(() => true, () => false))) { // page non chargee : pause 6 h plutot que 20 s perdues a chaque passe
+      S.hdvBrokenUntil = Date.now() + 6 * 3600000; writeFileSync('dump/hdv_page.txt', await main.innerText().catch(() => '')); log('HDV page non chargee (dump/hdv_page.txt) - HDV en pause 6 h'); return 0;
+    }
     writeFileSync('dump/hdv_page.txt', await main.innerText().catch(() => '')); // interface changeante : derniere page vue
     // nouvelle interface (06/10) : "Equipables par moi" coche, tri prix croissant, pastille du type
     const mine = page.getByLabel(/Équipables par moi/);
