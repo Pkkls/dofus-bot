@@ -18,7 +18,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMin: [2, 0, 9], breakMax: [8, 0, 9], loseRate: [0.05, 0, 0.5], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMin: [2, 0, 9], breakMax: [8, 0, 9], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -335,16 +335,22 @@ async function sellJunk(page, main, slot, junk) {
       let found = false;
       for (let k = 0; k < await cands.count() && !found; k++) found = (await openItem(main, cands.nth(k)))?.name === name;
       if (!found) { log(`ERREUR vente ${name} : introuvable dans la grille`); continue; }
-      const sell = main.getByRole('button', { name: /^Vendre ×1/ });
+      // Forgemagie : briser donne des orbes (Bouclier de forge, garde au prestige) ; on vend seulement si les kamas manquent pour l'energie
+      const brk = main.locator('button', { hasText: /^Briser ×1/ }).first();
+      const breakIt = CFG.breakJunk && S.kamas >= CFG.energyKamas + 3000 && await brk.isEnabled().catch(() => false);
+      const sell = breakIt ? brk : main.getByRole('button', { name: /^Vendre ×1/ });
       if (!(await sell.isEnabled().catch(() => false))) continue;
-      const price = (await sell.innerText()).replace(/^Vendre ×1 : /, '');
-      await sell.click(); // 1er clic : le bouton devient "Confirmer (+X K)"
+      const price = (await sell.innerText()).replace(/^(Vendre|Briser) ×1 : /, '');
+      await sell.click(); // 1er clic : le bouton devient "Confirmer (...)"
       const confirm = main.getByRole('button', { name: /^Confirmer/ });
-      if (!(await confirm.waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false))) { log(`ERREUR vente ${name} : pas de confirmation`); continue; }
+      if (!(await confirm.waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false))) {
+        if (breakIt) { log(`BRISE ${slot}: ${name} (score ${Math.round(s)}, ${price}, sans confirmation)`); await sleep(1200); continue; } // brise en 1 clic
+        log(`ERREUR vente ${name} : pas de confirmation`); continue;
+      }
       await confirm.click();
       await sleep(1200);
       if (await confirm.isVisible().catch(() => false)) { log(`ERREUR vente ${name} : confirmation sans effet`); continue; }
-      log(`VENDU ${slot}: ${name} (score ${Math.round(s)}, ${price})`);
+      log(`${breakIt ? 'BRISE' : 'VENDU'} ${slot}: ${name} (score ${Math.round(s)}, ${price})`);
     }
 }
 

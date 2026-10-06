@@ -100,3 +100,11 @@ Le jeu permet un prestige : retour niveau 1, sorts et inventaire perdus, un obje
 ## Optimisation moteur (06/10 apres-midi)
 
 Bilan avant : 51/51 victoires depuis 13:50 (~186/189 au total), 2,3 cartes/tour, ~36 s entre deux fins de combat. Ajouts : regle `healHurtFrom` (indice Sphincter Cell "a partir du tour 4, vos soins vous blessaient" : soins et vol de vie comptes negatifs), capture d'indice stricte (ligne "Indice" seulement, l'arene n'en donne pas), montee de zone sur taux de victoire cible `targetWin` (0.85, fenetre 20 combats, demande de kil : pas 100 %, garder une marge), anneau verrouille au prestige contourne (emplacement remplacable seulement).
+
+## Mise a jour du site du 06/10 (Forgemagie, Ascension) et surveillance
+
+- Surveillance : id de deploiement Next (`dpl=` dans les scripts) lu a chaque page ; s'il change, `siteScan` releve boutons/listes de chaque onglet du menu (nombres masques), compare a `S.siteMap`, signale les nouveautes (log `MAJ SITE`, decision, alerte) et sauve chaque page dans `dump/site_*.txt`. Releve de reference fait le 06/10.
+- Forgemagie : 1re visite = Bouclier de forge. Briser un objet (fiche inventaire "Briser x1 : +N orbe") donne des orbes (1 < niv 70, 2 jusqu'a 139, 3 au-dela, 1500/jour) ; les orbes ameliorent le bouclier (+% stats sur tout l'equipement, jusqu'a +200 % niv 200, garde au prestige). `sellJunk` brise au lieu de vendre si breakJunk=1 et kamas >= energyKamas + 3000, sinon vend. `forgeUpgrade` depense les orbes a chaque passe de gestion.
+- Ascension (prestige + niveau 200) : etages de boss, 2 energie, coffre par nouvel etage. Pas encore code (perso niv 53).
+- Guilde : "Entrer dans la Faille", pas encore explore.
+- Fenetres d'annonce ("Rejoins le Discord !") fermees par "Plus tard". Clics qui expirent 2 fois en 3 min : capture `dump/bloque-*` + alerte (fenetre inconnue, ex. anti-AFK non reconnu).
