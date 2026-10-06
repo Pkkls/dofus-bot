@@ -1145,6 +1145,7 @@ await managePass(page);
 let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastText = '', combats = 0;
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
+let clickFails = []; // clics expires recents (fenetre inconnue)
 let paced = false, throwChecked = false; // rythme : ecart deja fait sur cet ecran de fin ; abandon deja tire pour ce combat
 let trainLeft = 0, trainZone = null, climbStreak = 0, climbDir = 0, climbHist = [], lastLevel = 0; // entrainement demande depuis le tableau de bord
 let fightTimes = []; // fins de combat de la derniere heure (plafond)
@@ -1197,7 +1198,7 @@ while (true) {
     continue;
   }
   // test de presence : on previent et on attend l'humain, on ne clique jamais dedans
-  if (/Es-tu toujours là/.test(text)) {
+  if (/Es-tu toujours là|toujours là \?|es-tu là|clique sur (le|la)|captcha|anti-?bot|vérification humaine|prouve que/i.test(text)) {
     S.status = 'presence';
     if (!presenceAlerted) {
       decide('Test de presence : je ne clique jamais dedans, j\'attends le tien');
@@ -1435,5 +1436,21 @@ while (true) {
     autoClicked = false; idleSince = Date.now();
   }
   await sleep(1000);
-  } catch (e) { log('ERREUR ' + e.message.split('\n')[0]); await sleep(5000); await page.goto(COMBAT).catch(() => {}); autoClicked = false; idleSince = Date.now(); }
+  } catch (e) {
+    log('ERREUR ' + e.message.split('\n')[0]);
+    // 2 clics expires en 3 min : sans doute une fenetre inconnue par-dessus la page (anti-AFK, annonce) -> capture + alerte, on ne clique pas dedans
+    if (/Timeout/.test(e.message)) {
+      clickFails = clickFails.filter((t) => Date.now() - t < 180000); clickFails.push(Date.now());
+      if (clickFails.length >= 2) {
+        clickFails = [];
+        const ts = Date.now();
+        await page.screenshot({ path: `dump/bloque-${ts}.png` }).catch(() => {});
+        writeFileSync(`dump/bloque-${ts}.txt`, `${page.url()}\n\n${await page.locator('body').innerText().catch(() => '')}\n\n=== BOUTONS VISIBLES\n${await page.locator('button:visible').allInnerTexts().then((a) => a.map((x) => x.replace(/\s+/g, ' ')).join('\n')).catch(() => '')}`);
+        log(`BLOQUE fenetre inconnue ? capture dump/bloque-${ts}.png/txt`);
+        decide(`Clics bloques 2 fois : une fenetre inconnue recouvre peut-etre la page, capture dans dump/bloque-${ts}.png, verifie la fenetre du bot`);
+        alert('clics bloques : fenetre inconnue (anti-AFK ?), regarde la fenetre du bot'); await page.bringToFront().catch(() => {});
+      }
+    }
+    await sleep(5000); await page.goto(COMBAT).catch(() => {}); autoClicked = false; idleSince = Date.now();
+  }
 }
