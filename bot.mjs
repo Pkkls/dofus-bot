@@ -1866,7 +1866,8 @@ while (true) {
   endHandled = false; // plus sur un ecran de fin : le prochain sera un nouveau combat
 
   const auto = page.getByRole('button', { name: 'Auto', exact: true });
-  if (!autoClicked && /À toi de jouer/.test(text) && await auto.isEnabled().catch(() => false)) {
+  const hasAuto = (await auto.count().catch(() => 0)) > 0; // les Abysses n'ont pas de mode Auto
+  if (!autoClicked && /À toi de jouer/.test(text) && (!hasAuto || await auto.isEnabled().catch(() => false))) {
     // defaites volontaires (loseRate) : chasse seulement, tire une fois au tour 1, exclues du taux de victoire et de l'apprentissage
     if (!throwChecked && !fight && S.mode === 'chasse' && +(text.match(/Tour (\d+)/)?.[1] ?? 0) === 1) {
       throwChecked = true;
@@ -1891,7 +1892,11 @@ while (true) {
       }
     }
     if (CFG.manualFight && (await safe('combat', playTurn(page))) === true) idleSince = Date.now(); // tour joue ; le suivant reviendra ici
-    else {
+    else if (!hasAuto) { // pas de repli possible (Abysses) : on rend la main et on retentera au prochain passage
+      log('COMBAT manuel en echec sans mode Auto - fin du tour');
+      await page.getByRole('button', { name: 'Fin du tour' }).click({ timeout: 5000 }).catch(() => {});
+      idleSince = Date.now();
+    } else {
       if (CFG.manualFight) { log('COMBAT manuel en echec - passe en Auto pour ce combat'); fightMem.profile = null; }
       await sleep(1000 + Math.random() * 2000);
       await auto.click();
