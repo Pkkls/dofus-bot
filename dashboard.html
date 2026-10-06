@@ -49,7 +49,7 @@ button { font: inherit; color: inherit; }
 .pill.combat { color: var(--accent); background: var(--accent-soft); }
 .pill.combat .dot { animation: pulse 1.8s ease-in-out infinite; }
 .pill.gestion { color: var(--info); background: var(--info-soft); }
-.pill.pause, .pill.rate-limit, .pill.demarrage, .pill.throttle, .pill.repos, .pill.plafond { color: var(--warn); background: var(--warn-soft); }
+.pill.pause, .pill.rate-limit, .pill.demarrage, .pill.throttle, .pill.repos, .pill.plafond, .pill.recharge { color: var(--warn); background: var(--warn-soft); }
 .pill.presence, .pill.offline { color: #fff; background: var(--danger); }
 @keyframes pulse { 50% { opacity: .3; } }
 .grow { flex: 1; }
@@ -413,7 +413,7 @@ const icon = (id) => `<svg class="i"><use href="#i-${id}"/></svg>`;
 const ELEM = { Terre: 'var(--el-terre)', Feu: 'var(--el-feu)', Eau: 'var(--el-eau)', Air: 'var(--el-air)', Neutre: 'var(--el-neutre)' };
 const TIME_KEYS = new Set(['activeFrom', 'activeTo']);
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-const STATUS = { repos: 'Repos (hors plage)', plafond: 'Plafond atteint', combat: 'En combat', gestion: 'Gestion', pause: 'En pause', throttle: 'Ralenti (limiteur)', presence: 'Presence requise', 'rate-limit': 'Serveur sature', demarrage: 'Demarrage', offline: 'Bot hors ligne' };
+const STATUS = { repos: 'Repos (hors plage)', recharge: 'Recharge energie', plafond: 'Plafond atteint', combat: 'En combat', gestion: 'Gestion', pause: 'En pause', throttle: 'Ralenti (limiteur)', presence: 'Presence requise', 'rate-limit': 'Serveur sature', demarrage: 'Demarrage', offline: 'Bot hors ligne' };
 const MODE = { aventure: 'Aventure (Chemin)', chasse: 'Chasse', boss: 'Boss de zone', arene: 'Arene' };
 const CFG_META = {
   vitShare: ['Part en Vitalite', 'de 0 a 1, le reste dans l\'element du deck', 0, 1, 0.05],
@@ -432,6 +432,7 @@ const CFG_META = {
   activeFrom: ['Debut de plage', 'heure de reprise (HH:MM)', 0, 1439, 1],
   activeTo: ['Fin de plage', 'heure d\'arret, peut passer minuit (HH:MM)', 0, 1439, 1],
   maxFightsPerHour: ['Combats max par heure', 'heure glissante, 0 = illimite', 0, 600, 1],
+  energyResume: ['Energie de reprise', 'a sec, le bot attend ce niveau (1 point / 6 min)', 1, 1000, 1],
 };
 const ACTS = {
   gestion: ['Passe complete', 'sparkles', 'coffres, deck, stuff, HDV, caracs'],
@@ -612,7 +613,8 @@ function render(d) {
   const nextAr = (S.last?.arene || S.since) + CFG.arenaEvery * 60000;
   $('p-arena').textContent = !CFG.arenaEvery ? 'coupee' : nextAr <= now ? 'au prochain combat' : `vers ${hm(nextAr)} (${dur(nextAr - now)})`;
   $('p-boss').textContent = S.boss?.live ? 'combat en cours' : S.boss?.eta > now ? `${S.boss.name}, ${hm(S.boss.eta)}` : 'apres chaque combat';
-  $('p-energy').textContent = S.energy ?? '-';
+  const en = S.energy == null ? null : Math.min(S.energyMax ?? Infinity, S.energy + Math.floor((now - (S.energyAt ?? now)) / 360000)); // meme estimation que bot.mjs
+  $('p-energy').textContent = en == null ? '-' : `${en}${S.energyMax ? ' / ' + S.energyMax : ''}${S.status === 'recharge' && S.resumeAt ? `, reprise ${hm(S.resumeAt)}` : ''}`;
   $('p-empty').textContent = S.emptySlots?.length ? S.emptySlots.join(', ') : 'aucun';
   $('p-combats').textContent = fmt(S.combats || 0);
   $('p-sched').textContent = !CFG.scheduleOn ? 'toujours actif' : `${hhmm(CFG.activeFrom)} -> ${hhmm(CFG.activeTo)}${S.status === 'repos' && S.resumeAt ? `, reprise ${hm(S.resumeAt)}` : ''}`;

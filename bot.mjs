@@ -17,8 +17,14 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600] }; // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyResume: [2, 1, 1000] }; // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
+// Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
+const REGEN = 360000;
+const setEnergy = (n, max) => { S.energy = n; S.energyAt = Date.now(); if (max) S.energyMax = max; };
+const energyNow = () => (S.energy == null ? null : Math.min(S.energyMax ?? Infinity, S.energy + Math.floor((Date.now() - (S.energyAt ?? Date.now())) / REGEN)));
+// rebase sans perdre le point en cours de recharge
+const spendEnergy = (n) => { if (S.energy == null) return; const e = energyNow(), at = S.energyAt ?? Date.now(); S.energyAt = Date.now() - (Date.now() - at) % REGEN; S.energy = Math.max(0, e - n); };
 const log = (line) => { const l = `${new Date().toISOString()} ${line}`; console.log(l); appendFileSync('bot.log', l + '\n'); push(); };
 // temps reel : chaque client du tableau de bord garde un flux SSE ouvert ; push() regroupe les envois (max ~5/s)
 const clients = new Set();
@@ -50,7 +56,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['arena', 'boss', 'deck', 'elem', 'energy', 'emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -362,8 +368,9 @@ async function attackGroup(page, zone, maxRank) {
   await page.goto(BASE + zone);
   await page.getByRole('button', { name: 'Attaquer' }).first().waitFor({ timeout: 20000 });
   const t = await page.locator('main').innerText();
-  S.energy = +(t.match(/Énergie : (\d+)\//)?.[1] ?? S.energy);
-  if (/Énergie : 0\//.test(t)) { log('ENERGIE 0 - pause 10 min'); await sleep(600000); return; }
+  const en = t.match(/Énergie : (\d+)\/(\d+)/);
+  if (en) setEnergy(+en[1], +en[2]);
+  if (en && +en[1] < 1) { S.recharging = true; await gate(); return attackGroup(page, zone, maxRank); }
   const i = pickGroup(t, maxRank);
   decide(`Groupe ${i + 1} attaque : le plus gros dont la difficulte <= ${RANK[maxRank]}`);
   await page.getByRole('button', { name: 'Attaquer' }).nth(i).click();
@@ -420,7 +427,7 @@ async function fightArena(page) {
   await page.getByRole('button', { name: 'Défier' }).first().waitFor({ timeout: 20000 });
   const a = parseArena(await page.locator('main').innerText());
   S.arena = { elo: a.elo, opti: a.opti, rank: a.rank, wl: a.wl, at: Date.now() };
-  S.energy = a.energy;
+  if (a.energy) setEnergy(a.energy); // 0 = texte non trouve
   if (a.energy < CFG.arenaMinEnergy) { decide(`Arene sautee : energie ${a.energy} sous le minimum ${CFG.arenaMinEnergy}, je la garde pour la chasse`); log(`ARENE ignoree : energie ${a.energy} < ${CFG.arenaMinEnergy}`); return false; }
   const i = a.opp.reduce((b, o, j) => (o.opti < a.opp[b].opti ? j : b), 0);
   if (!a.opp.length || a.opp[i].opti > a.opti) { decide(`Arene sautee : le plus faible des 6 (${a.opp[i]?.opti ?? '?'}) depasse mon opti ${a.opti}`); log(`ARENE ignoree : aucun adversaire sous mon opti (${a.opti})`); return false; }
@@ -478,6 +485,9 @@ if (process.argv[2] === 'test') {
   assert.equal(scoreItem('Vendre · 1 440 K\nNiveau 72 requis'), 0);
   const P = parseStats('\nForce\n45 (0 +45)\nIntelligence\n25 (0 +25)\nChance\n70 (0 +70)\nAgilité\n65 (0 +65)\nTerre\t4\t0 %\nFeu\t8\t0 %\nEau\t9\t0 %\nPuissance 85 · Soins 0');
   assert.deepEqual([P.Force, P.Chance, P.Puissance, P.dmg.Eau], [45, 70, 85, 9]);
+  setEnergy(0, 200); S.energyAt -= 2.5 * REGEN; assert.equal(energyNow(), 2);
+  spendEnergy(1); assert.equal(energyNow(), 1); S.energyAt -= 0.5 * REGEN; assert.equal(energyNow(), 2); // le point en cours de recharge est garde
+  setEnergy(199); S.energyAt -= 5 * REGEN; assert.equal(energyNow(), 200);
   assert.equal(parseCard('4 Ronces Agressives 24 à 27 dommages Terre RARE').name, 'Ronces Agressives');
   assert.equal(parseCard('1 Tirs Puissants +100 Puissance (1 tour) +10 % Critique (1 tour) CLASSE').dmg, null);
   assert.equal(parseCard('3 Flèche Glacée -2 PA à la cible 12 à 14 dommages Eau COMMUN').name, 'Flèche Glacée');
@@ -590,11 +600,18 @@ async function gate() {
     S.fightsHour = fightTimes.length;
     const off = CFG.scheduleOn && !inWindow(mins, CFG.activeFrom, CFG.activeTo);
     const capped = CFG.maxFightsPerHour > 0 && fightTimes.length >= CFG.maxFightsPerHour;
-    if (!off && !capped) { S.resumeAt = null; if (said) decide('Reprise : dans la plage horaire et sous le plafond'); return; }
+    // energie epuisee : attend CFG.energyResume points, ou 2 points si le boss annonce vient d'arriver (il passe avant)
+    const e = energyNow();
+    if (e != null && e < 1) S.recharging = true;
+    if (S.recharging && (e == null || e >= CFG.energyResume || (e >= 2 && S.boss?.eta && Date.now() > S.boss.eta + 5000))) S.recharging = false;
+    if (!off && !capped && !S.recharging) { S.resumeAt = null; if (said) decide(`Reprise : ${said === 'nrj' ? `energie a ${e}` : 'dans la plage horaire et sous le plafond'}`); return; }
     if (off) {
       const wait = ((CFG.activeFrom - mins + 1440) % 1440) * 60000;
       S.status = 'repos'; S.resumeAt = Date.now() + wait;
       if (said !== 'off') { decide(`Hors plage horaire (${hhmm(CFG.activeFrom)} -> ${hhmm(CFG.activeTo)}) : arret jusqu'a ${hhmm(CFG.activeFrom)}`); log(`REPOS jusqu'a ${hhmm(CFG.activeFrom)}`); said = 'off'; }
+    } else if (!capped) {
+      S.status = 'recharge'; S.resumeAt = S.energyAt + (CFG.energyResume - S.energy) * REGEN;
+      if (said !== 'nrj') { decide(`Plus d'energie (${e}) : recharge 1 point / 6 min, reprise a ${CFG.energyResume} points vers ${new Date(S.resumeAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`); log(`ENERGIE ${e} - recharge jusqu'a ${CFG.energyResume}`); said = 'nrj'; }
     } else {
       S.status = 'plafond'; S.resumeAt = fightTimes[0] + 3600000;
       if (said !== 'cap') { decide(`Plafond atteint : ${fightTimes.length} combats sur la derniere heure (max ${CFG.maxFightsPerHour}), reprise vers ${new Date(S.resumeAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`); log(`PLAFOND ${fightTimes.length}/h`); said = 'cap'; }
@@ -651,6 +668,7 @@ let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastTe
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
 let fightTimes = []; // fins de combat de la derniere heure (plafond)
+let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
   coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss,
@@ -697,6 +715,7 @@ while (true) {
     const g = text.match(/\+([\d\s]+?) XP\s*\+([\d\s]+?) kamas/);
     S.combats = combats;
     fightTimes.push(Date.now());
+    spendEnergy(fight === 'boss' || fight === 'arene' ? 2 : 1);
     log(`${fight ? fight.toUpperCase() + ' ' : ''}${win ? 'VICTOIRE' : 'DEFAITE'} ${g ? `+${num(g[1])} XP +${num(g[2])} kamas` : 'gains=0'}`);
     const zl = await page.getByRole('link', { name: 'Autres groupes de la zone' }).getAttribute('href', { timeout: 1000 }).catch(() => null);
     if (zl?.startsWith('/chasse?zone=')) zone = zl;
@@ -725,6 +744,7 @@ while (true) {
     }
     }
     autoClicked = false; idleSince = Date.now();
+    if (/Plus assez d.énergie/.test(text) && text !== energyText) { energyText = text; setEnergy(0); S.recharging = true; }
     await gate(); // plage horaire + plafond de combats/heure, avant de lancer quoi que ce soit
     idleSince = Date.now();
 
