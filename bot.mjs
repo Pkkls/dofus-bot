@@ -70,7 +70,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -844,7 +844,8 @@ const parseArena = (t) => ({
 async function fightArena(page) {
   await page.goto(BASE + '/arene');
   await page.getByRole('button', { name: 'Défier' }).first().waitFor({ timeout: 20000 });
-  const a = parseArena(await page.locator('main').innerText());
+  let a = parseArena(await page.locator('main').innerText());
+  for (let k = 0; k < 10 && (!a.opti || !a.opp.length); k++) { await sleep(500); a = parseArena(await page.locator('main').innerText()); } // page encore en chargement
   S.arena = { elo: a.elo, opti: a.opti, rank: a.rank, wl: a.wl, at: Date.now() };
   if (a.energy) setEnergy(a.energy); // 0 = texte non trouve
   if (a.energy < CFG.arenaMinEnergy) { decide(`Arene sautee : energie ${a.energy} sous le minimum ${CFG.arenaMinEnergy}, je la garde pour la chasse`); log(`ARENE ignoree : energie ${a.energy} < ${CFG.arenaMinEnergy}`); return false; }
@@ -1375,6 +1376,23 @@ async function unblock(page, text) {
   else await page.locator('button:visible, a:visible').filter({ hasText: act }).first().click({ timeout: 5000 }).catch(() => {});
   unblockPending.at = Date.now();
 }
+// Actions du tableau de bord : executees des que le bot n'est pas en plein combat ; resultat garde par bouton (S.actRes)
+async function runActions(page) {
+  let started = false;
+  while (S.queue.length && !started) {
+    const a = S.queue.shift();
+    if (a === 'f5') continue; // traite en tete de boucle
+    log(`ACTION ${a} (tableau de bord)`);
+    S.last[a] = Date.now();
+    decide(`Action demandee depuis le tableau de bord : ${a}`);
+    let r, err = null;
+    try { r = a === 'gestion' ? await managePass(page) : await ACTIONS[a](page); } catch (e) { err = e.message.split('\n')[0]; log(`ERREUR action ${a} : ${err}`); }
+    if (r === true && (a === 'boss' || a === 'arene')) { fight = a; if (a === 'boss') lastBoss = Date.now(); }
+    started = r === true && ['boss', 'arene', 'zone', 'aventure'].includes(a);
+    (S.actRes ??= {})[a] = { t: Date.now(), r: err ? 'echec' : started ? 'combat lance' : r === false ? 'rien a faire' : 'fait', err };
+  }
+  return started;
+}
 let xpHard = false, xpHardWins = 0, xpHardLastWin = null, zoneCheck = 0;
 const grpRank = () => (xpHard ? 3 : strikes ? 0 : CFG.maxGroup);
 let paced = false, throwChecked = false; // rythme : ecart deja fait sur cet ecran de fin ; abandon deja tire pour ce combat
@@ -1448,17 +1466,6 @@ while (true) {
   }
   satStreak = 0;
 
-  // "Aucun combat en cours" (apres redemarrage, file d'attente, combat expire) : on relance un combat de chasse
-  if (/Aucun combat en cours/i.test(text) && !/À toi de jouer/.test(text)) {
-    if (wantAdventure() && (await goAdventure(page))) { autoClicked = false; idleSince = Date.now(); continue; } // l'aventure d'abord
-    zone ??= await pickZone(page, null, false).catch(() => null);
-    decide(`Aucun combat en cours : je relance la chasse${zone ? ` (${zone.replace('/chasse?zone=', 'zone ')})` : ''}`);
-    log('AUCUN combat - relance chasse');
-    if (zone) await safe('attaque', attackGroup(page, zone, grpRank()));
-    else await page.locator('main').locator('a, button').filter({ hasText: /Partir à la chasse/ }).first().click({ timeout: 5000 }).catch(() => {});
-    autoClicked = false; idleSince = Date.now();
-    continue;
-  }
   // file d'attente (serveur plein, "garde cette page ouverte") : surtout ne rien recharger ni naviguer, sinon la place est perdue
   if (/File d.attente|Le serveur est plein/i.test(text)) {
     const pos = text.match(/(\d+)\s*[ᵉe]\s*\n/)?.[1] ?? text.match(/(\d+) joueurs en attente/)?.[1] ?? '?';
@@ -1493,6 +1500,24 @@ while (true) {
     continue;
   }
   presenceAlerted = false;
+  // "Aucun combat en cours" (apres redemarrage, file d'attente, combat expire) : on relance un combat de chasse
+  if (/Aucun combat en cours/i.test(text) && !/À toi de jouer/.test(text)) {
+    if (wantAdventure() && (await goAdventure(page))) { autoClicked = false; idleSince = Date.now(); continue; } // l'aventure d'abord
+    zone ??= await pickZone(page, null, false).catch(() => null);
+    decide(`Aucun combat en cours : je relance la chasse${zone ? ` (${zone.replace('/chasse?zone=', 'zone ')})` : ''}`);
+    log('AUCUN combat - relance chasse');
+    if (zone) await safe('attaque', attackGroup(page, zone, grpRank()));
+    else await page.locator('main').locator('a, button').filter({ hasText: /Partir à la chasse/ }).first().click({ timeout: 5000 }).catch(() => {});
+    autoClicked = false; idleSince = Date.now();
+    continue;
+  }
+  // actions du tableau de bord hors combat : pas besoin d'attendre un ecran de fin
+  if (S.queue.length && S.queue[0] !== 'f5' && !(/·\s*Tour \d+/.test(text) && !/Victoire !|Défaite/.test(text)) && !/File d.attente|Le serveur est plein/i.test(text)) {
+    const started = await runActions(page);
+    if (!started) await page.goto(COMBAT).catch(() => {});
+    autoClicked = false; idleSince = Date.now();
+    continue;
+  }
 
   const next = page.getByRole('button', { name: 'Suivant en auto' });
   // boutons OU liens de fin de combat ("Retour a l'arene" est un lien) : sinon, apres un redemarrage, l'ecran de fin n'est pas reconnu
@@ -1616,18 +1641,8 @@ while (true) {
     await gate(); // plage horaire + plafond de combats/heure, avant de lancer quoi que ce soit
     idleSince = Date.now();
 
-    // actions demandees depuis le tableau de bord, executees ici entre deux combats
-    let started = false;
-    while (S.queue.length && !started) {
-      const a = S.queue.shift();
-      log(`ACTION ${a} (tableau de bord)`);
-      S.last[a] = Date.now();
-      decide(`Action demandee depuis le tableau de bord : ${a}`);
-      const r = a === 'gestion' ? await managePass(page) : await safe(a, ACTIONS[a](page));
-      if (r === true && (a === 'boss' || a === 'arene')) { fight = a; if (a === 'boss') lastBoss = Date.now(); }
-      started = r === true && ['boss', 'arene', 'zone', 'aventure'].includes(a);
-    }
-    if (started) continue;
+    // actions demandees depuis le tableau de bord (si elles n'ont pas deja ete executees hors combat)
+    if (await runActions(page)) continue;
 
     // boss toutes les ~2.5 min de verif, un seul essai par apparition
     if (Date.now() > nextBossCheck && Date.now() - lastBoss > 360000) {

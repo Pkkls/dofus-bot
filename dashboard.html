@@ -193,6 +193,7 @@ button { font: inherit; color: inherit; }
 .act.main svg.i { color: var(--accent); }
 .act.queued { border-color: var(--info); background: var(--info-soft); }
 .act.queued small { color: var(--info); }
+.act.failed small { color: var(--danger); }
 .hint { color: var(--text-3); font-size: var(--fs-xs); margin-top: var(--space-3); }
 
 /* ===== Historique (onglets) ===== */
@@ -793,7 +794,10 @@ function render(d) {
   for (const btn of $('actions').children) {
     const a = btn.dataset.a, q = S.queue?.includes(a);
     btn.classList.toggle('queued', !!q);
-    btn.querySelector('small').textContent = q ? 'en file, fin du combat' : S.last?.[a] ? 'derniere : ' + hm(S.last[a]) : ACTS[a][2];
+    const res = S.actRes?.[a];
+    btn.querySelector('small').textContent = q ? 'en file, des que le combat se termine' : res ? `${res.r}, ${hm(res.t)}` : S.last?.[a] ? 'derniere : ' + hm(S.last[a]) : ACTS[a][2];
+    btn.title = res?.err ? `Dernier echec : ${res.err}` : ACTS[a][2];
+    btn.classList.toggle('failed', res?.r === 'echec');
   }
   $('queueTxt').textContent = S.queue?.length ? `${S.queue.length} en file` : '';
 
