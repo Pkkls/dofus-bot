@@ -257,6 +257,7 @@ details[open].card > summary .chev { transform: rotate(180deg); }
   <span class="uptime num" id="uptime"></span>
   <span class="sep hide-md"></span>
   <button class="btn ghost" id="sound" type="button" title="Le navigateur bloque le son tant qu'on n'a pas clique une fois sur la page" hidden><svg class="i"><use href="#i-sound"/></svg>Activer le bip</button>
+  <button class="btn" id="manual" type="button" title="Combat manuel (moteur du bot) ou mode Auto du jeu"><svg class="i"><use href="#i-swords"/></svg><span>Combat</span></button>
   <button class="btn" id="pause" type="button"><svg class="i"><use href="#i-pause"/></svg><span>Pause</span></button>
 </header>
 
@@ -434,6 +435,7 @@ const CFG_META = {
   maxFightsPerHour: ['Combats max par heure', 'heure glissante, 0 = illimite', 0, 600, 1],
   energyReserve: ["Reserve d'energie", "gardee pour le boss (2 par combat), la chasse s'arrete a ce niveau", 0, 1000, 1],
   energyBuy: ["Acheter de l'energie", '1 = a la reserve, achete +10 (300 K le point) sans toucher a la reserve de kamas', 0, 1, 1],
+  manualFight: ['Combat manuel', '1 = le moteur du bot joue les cartes, 0 = mode Auto du jeu', 0, 1, 1],
   energyResume: ['Energie de reprise', 'apres la reserve, la chasse reprend a ce niveau (1 point / 6 min)', 1, 1000, 1],
 };
 const ACTS = {
@@ -531,6 +533,7 @@ function render(d) {
   const { S, stats: st, CFG, now } = d;
   renderNet(d.net, CFG.maxReqPerMin);
   setStatus(S.paused ? 'pause' : S.status);
+  $('manual').innerHTML = `${icon('swords')}<span>Combat : ${CFG.manualFight ? 'manuel' : 'auto'}</span>`; $('manual').setAttribute('aria-pressed', String(!!CFG.manualFight));
   $('pause').innerHTML = S.paused ? `${icon('play')}<span>Reprendre</span>` : `${icon('pause')}<span>Pause</span>`;
   $('who').innerHTML = S.name ? `<b>${esc(S.name)}</b><span class="lvl">niv. ${S.level}</span><span class="kamas num">${fmt(S.kamas)} K</span>` : '<span class="muted">personnage en chargement</span>';
   $('uptime').textContent = 'en ligne ' + dur(now - S.since);
@@ -683,6 +686,7 @@ $('save').onclick = async () => {
 };
 
 /* ---------- actions ---------- */
+$('manual').onclick = () => fetch('/api/config', { method: 'POST', body: JSON.stringify({ manualFight: state?.CFG?.manualFight ? 0 : 1 }) }).catch(() => {});
 $('pause').onclick = () => fetch('/api/pause', { method: 'POST' }).catch(() => {});
 $('actions').innerHTML = Object.entries(ACTS).map(([a, [l, ic, d]]) =>
   `<button type="button" class="act${a === 'gestion' ? ' main' : ''}" data-a="${a}">${icon(ic)}<b>${l}</b><small>${d}</small></button>`).join('');
