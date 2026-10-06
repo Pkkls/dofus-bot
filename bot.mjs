@@ -18,7 +18,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMin: [2, 0, 9], breakMax: [8, 0, 9], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], hardEvery: [10, 0, 200], stuckSec: [15, 5, 120], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMinSec: [90, 0, 570], breakMaxSec: [480, 0, 570], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], hardEvery: [10, 0, 200], stuckSec: [15, 5, 120], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -1480,9 +1480,10 @@ while (true) {
     if (!paced) { // une fois par ecran de fin : ecart aleatoire, parfois une vraie pause (< 10 min, sinon la place est liberee)
       paced = true;
       if (Math.random() < CFG.breakChance) {
-        const ms = rand(CFG.breakMin, CFG.breakMax) * 60000;
+        const ms = Math.round(rand(CFG.breakMinSec, CFG.breakMaxSec)) * 1000; // a la seconde, < 10 min (place liberee au-dela)
         S.status = 'repos'; S.resumeAt = Date.now() + ms;
-        decide(`Pause aleatoire de ${Math.round(ms / 60000)} min`); log(`PAUSE aleatoire ${Math.round(ms / 60000)} min`);
+        const mmss = `${Math.floor(ms / 60000)} min ${String(Math.round(ms / 1000) % 60).padStart(2, '0')} s`;
+        decide(`Pause aleatoire de ${mmss}`); log(`PAUSE aleatoire ${mmss}`);
         await sleep(ms);
         S.resumeAt = null;
       }
