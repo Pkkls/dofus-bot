@@ -39,7 +39,21 @@ const parseJeu = (t) => {
   const m = t.match(/Énergie\n(\d+)\/(\d+)\n+(?:\+1 dans (?:(\d+) min)?\s*(\d+)?)?/);
   return m && { e: +m[1], max: +m[2], next: (+(m[3] ?? 0) * 60 + +(m[4] ?? 0)) * 1000, price: +(t.match(/\(([\d\s]+) K le point/)?.[1].replace(/\D/g, '') ?? 0), left: +(t.match(/encore (\d+) aujourd/)?.[1] ?? 0) };
 };
-const log = (line) => { const l = `${new Date().toISOString()} ${line}`; console.log(l); appendFileSync('bot.log', l + '\n'); push(); };
+// Boite de reception du superviseur (dump/inbox.jsonl) : ce que le bot ne sait pas traiter seul, avec la capture associee.
+// Lue par l'agent superviseur (SUPERVISEUR.md) qui enquete, corrige le code, teste et redemarre.
+const INBOX = [
+  [/^MAJ SITE nouveautes/, 'maj-site'], [/^ABYSSES nouvel ecran/, 'ecran-abysses'], [/^BLOQUE fenetre inconnue/, 'fenetre-inconnue'],
+  [/^INDICE /, 'indice-defaite'], [/^COMBAT manuel en echec/, 'combat-manuel-echec'], [/^COMBAT pat sans issue/, 'pat-sans-issue'],
+  [/^ERREUR /, 'erreur'], [/opti \(0\)|budget nul|achat rate|introuvable/, 'lecture-aberrante'], [/^AVENTURE indisponible/, 'aventure-bloquee'],
+];
+const toInbox = (line) => {
+  const hit = INBOX.find(([re]) => re.test(line));
+  if (!hit) return;
+  const ev = { t: new Date().toISOString(), type: hit[1], msg: line.slice(0, 500), files: line.match(/dump\/[\w./*-]+/g) ?? [] };
+  appendFileSync('dump/inbox.jsonl', JSON.stringify(ev) + '\n');
+  (S.inbox ??= []).unshift(ev); S.inbox.length = Math.min(S.inbox.length, 30);
+};
+const log = (line) => { const l = `${new Date().toISOString()} ${line}`; console.log(l); appendFileSync('bot.log', l + '\n'); try { toInbox(line); } catch {} push(); };
 // temps reel : chaque client du tableau de bord garde un flux SSE ouvert ; push() regroupe les envois (max ~5/s)
 const clients = new Set();
 let pushTimer = null;
