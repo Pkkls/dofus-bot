@@ -911,6 +911,8 @@ async function fightArena(page) {
 
 // HDV : achete de quoi remplir les emplacements vides (vus par la passe inventaire), dans le budget au-dessus de la reserve
 // ponytail: emplacements vides seulement, l'HDV ne montre pas de comparaison avec la piece portee
+// etage d'Ascension exige pour un prestige donne ("etage 20 termine pour passer Prestige 4 ; etage 30, ... pour le Prestige 5"), null si non dit
+const prestigeFloor = (t, p) => [...t.matchAll(/[ée]tage (\d+)[^;\n]*?Prestige (\d+)/gi)].find((m) => +m[2] === p)?.[1] ?? null;
 const parseHdvRows = (t) => [...t.matchAll(/\n([^\n]+)\n(?:Niveau (\d+) · vendu par [^\n]*|Niv\. (\d+) · [^\n]+\npar [^\n]*)\n([\d\s\u00a0\u202f]+) K\n(Acheter|Trop cher)/g)]
   .map((m, idx) => ({ idx, raw: m[1], name: m[1].replace(/ · Rayonnant$/, ''), level: +(m[2] ?? m[3]), price: +m[4].replace(/\D/g, ''), buyable: m[5] === 'Acheter' }));
 // HDV (prix bas, pas d'economie) : pour chaque emplacement au score connu, l'annonce de mon niveau au meilleur gain par kama
@@ -1023,6 +1025,8 @@ if (process.argv[2] === 'test') {
   assert.deepEqual([AR.elo, AR.opti, AR.rank, AR.energy, AR.opp.length, AR.opp[1].name, AR.opp[1].opti], [985, 2302, '6145', 148, 2, 'Pad', 2036]);
   const HR = parseHdvRows('\nFiltrer\nYugoufle\nNiveau 41 · vendu par Hadu\n300 K\nAcheter\n★\nKompost · Rayonnant\nNiveau 60 · vendu par Ouateu\n1 500 K\nTrop cher');
   assert.deepEqual(HR.map((r) => [r.name, r.level, r.price, r.buyable]), [['Yugoufle', 41, 300, true], ['Kompost', 60, 1500, false]]);
+  const ASC = 'Pour refaire un Prestige : étage 20 terminé pour passer Prestige 4 ; étage 30, 1600 d’Elo et 500 000 dégâts cumulés au Kralamoure pour le Prestige 5 ; étage 40, 2000 d’Elo pour le Prestige 6.';
+  assert.equal(prestigeFloor(ASC, 4), '20'); assert.equal(prestigeFloor(ASC, 5), '30'); assert.equal(prestigeFloor(ASC, 2), null);
   assert.deepEqual(parseHdvRows('\n400 offres\nSoubretture\nNiv. 10 · Ceinture\npar Kkkkkk\n750 K\nAcheter').map((r) => [r.name, r.level, r.price, r.buyable]), [['Soubretture', 10, 750, true]]);
   assert.equal(hdvStats('\nFiltrer\nSac du Récolteur\nNiveau 15 · vendu par T\n300 K\nAcheter\nSac du Récolteur\nRARE\nCape\nNiveau 15\n+400 Pods\n+20 Vitalité\nYugoufle\nNiveau 41 · vendu par H\n300 K\nAcheter', 'Sac du Récolteur'), '+400 Pods\n+20 Vitalité');
   assert.ok(scoreItem('Comparé à X\n+1 PM\n+10 Vitalité\n+10 Sagesse\n+10 Puissance\n-3 Dommages\n+2% Résistance Terre\n-4 Tacle') > 0);
@@ -1569,12 +1573,25 @@ const controls = (loc) => loc.locator('button, a').evaluateAll((els) => els.map(
 async function rushPrestige(page) {
   const main = page.locator('main');
   if (!S.rushAsc || (S.ascBest ?? 0) >= S.rushAsc) { // condition inconnue ou remplie : page Personnage (bouton Prestige)
-    await page.goto(BASE + '/personnage');
-    await main.getByText(/Prestige/).first().waitFor({ timeout: 20000 });
-    const t = await main.innerText();
-    writeFileSync('dump/prestige.txt', `${t}\n\n=== BOUTONS\n${await controls(main)}`);
-    const btn = main.locator('button:enabled').filter({ hasText: /Prestige/i }).filter({ hasNotText: /Voir|Classement/i }).first();
-    if (await btn.isVisible().catch(() => false)) {
+    // le bouton peut etre sur /personnage ou sur la page du lien "Voir mon Prestige" (Ascension) : on lit les deux, chaque page capturee
+    let t = '', btn = null, dumpTxt = '';
+    for (const src of ['/personnage', 'lien']) {
+      if (src === 'lien') {
+        await page.goto(BASE + '/ascension');
+        const href = await main.locator('a').filter({ hasText: /Voir mon Prestige/i }).first().getAttribute('href', { timeout: 10000 }).catch(() => null);
+        if (!href) break;
+        await page.goto(new URL(href, BASE).href);
+      } else await page.goto(BASE + src);
+      await main.getByText(/Prestige/).first().waitFor({ timeout: 20000 }).catch(() => {});
+      t = await main.innerText().catch(() => '');
+      dumpTxt += `=== ${page.url()}\n${t}\n\n=== BOUTONS\n${await controls(main)}\n\n`;
+      btn = main.locator('button:enabled').filter({ hasText: /Prestige/i }).filter({ hasNotText: /Voir|Classement/i }).first();
+      if (await btn.isVisible().catch(() => false)) break;
+      btn = null;
+    }
+    writeFileSync('dump/prestige.txt', dumpTxt);
+    if ((S.level ?? 0) < 200) { log(`PRESTIGE pages lues (niveau ${S.level}, rien a faire avant 200) : dump/prestige.txt${btn ? ', bouton present' : ''}`); return false; } // test sans risque
+    if (btn) {
       page.once('dialog', (dg) => { log(`PRESTIGE dialogue : ${dg.message().slice(0, 150)}`); dg.accept().catch(() => {}); });
       const lbl = (await btn.innerText()).replace(/\s+/g, ' ').trim();
       await btn.click(); await sleep(1500);
@@ -1583,8 +1600,8 @@ async function rushPrestige(page) {
       log(`PRESTIGE lance (${lbl}) : prestige ${S.prestige} -> ${S.prestige + 1}`); decide(`Rush prestige : niveau 200, je fais le prestige (${lbl})`);
       S.rushAsc = 0; rushNext = Date.now() + 60000; return true;
     }
-    const need = t.match(/[ée]tage (\d+)[^\n]{0,40}(?:pour|Prestige)/i)?.[1] ?? (S.prestige === 3 ? '20' : null); // P4 : etage 20 (texte de l'Ascension)
-    if (!need) { decide('Rush prestige : niveau 200 mais pas de bouton Prestige ni de condition lue, voir dump/prestige.txt ; nouvel essai dans 30 min'); log('PRESTIGE indisponible, condition illisible (dump/prestige.txt)'); rushNext = Date.now() + 1800000; return false; }
+    const need = prestigeFloor(dumpTxt, S.prestige + 1) ?? (S.prestige === 3 ? '20' : null); // P4 : etage 20 (texte de l'Ascension)
+    if (!need) { decide('Rush prestige : niveau 200 mais pas de bouton Prestige ni de condition lue, voir dump/prestige.txt ; nouvel essai dans 30 min'); log('PRESTIGE indisponible, condition illisible (dump/prestige.txt)'); if (!S.prestigeAlerted) { S.prestigeAlerted = true; alert('niveau 200 : bouton Prestige introuvable, voir dump/prestige.txt'); } rushNext = Date.now() + 1800000; return false; }
     S.rushAsc = +need; decide(`Rush prestige : il faut l'etage ${need} de l'Ascension avant le prestige`);
   }
   if ((energyNow() ?? 0) < 2 + CFG.energyReserve) { decide('Rush prestige : energie trop basse pour l\'Ascension, j\'attends'); rushNext = Date.now() + 600000; return false; }
