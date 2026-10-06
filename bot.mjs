@@ -577,7 +577,8 @@ async function playTurn(page) {
     const mv = bestMove(st, fightMem.inc, s, weaponUsed, blocked, P);
     if (!mv) break;
     if (mv.single && st.target !== mv.focus.name) {
-      await main.locator('button').filter({ has: page.locator('[aria-label="Résistances"]') }).nth(mv.focus.i).click();
+      // ciblage : delai court, un ennemi momentanement desactive (animation) ne doit pas faire tomber le tour en Auto
+      if (!(await main.locator('button').filter({ has: page.locator('[aria-label="Résistances"]') }).nth(mv.focus.i).click({ timeout: 4000 }).then(() => true, () => false))) { blocked.add(mv.card.name); if (++fails >= 3) return false; st = await settle(await readFight(page)); continue; }
       await sleep(400);
     }
     await sleep(rand(CFG.thinkMin, CFG.thinkMax)); // temps de reflexion
@@ -1019,6 +1020,20 @@ async function buyEnergy(page, max = false, sold = false) {
   else log(`ENERGIE achat sans effet (${after?.e ?? '?'}/${j.max})`);
 }
 
+// Forgemagie (06/10) : la 1re visite donne le Bouclier de forge ; page sauvegardee pour coder son usage ensuite
+async function visitForge(page) {
+  await page.goto(BASE + '/forgemagie');
+  await sleep(4000);
+  const later = page.getByRole('button', { name: 'Plus tard', exact: true });
+  if (await later.isVisible().catch(() => false)) await later.click().catch(() => {});
+  const t = await page.locator('main').innerText().catch(() => '');
+  const ctrls = await page.locator('main').locator('button, a, input, select').evaluateAll((els) => els.map((e) => `${e.tagName}${e.disabled ? ' [disabled]' : ''} "${(e.innerText || e.value || '').replace(/\s+/g, ' ').slice(0, 90)}" ${e.title || ''}`)).catch(() => []);
+  writeFileSync('dump/forgemagie.txt', `${page.url()}\n\n${t}\n\n=== CONTROLS\n${ctrls.join('\n')}`);
+  S.last.forge = Date.now();
+  log(`FORGE visitee (${page.url()}) : ${t.match(/Bouclier de forge[^\n]*/)?.[0] ?? 'page sauvegardee dans dump/forgemagie.txt'}`);
+  decide('Forgemagie : 1re visite faite (Bouclier de forge), page sauvegardee pour la suite');
+}
+
 // Coffres d'abord (nouveaux objets/cartes), puis deck, stuff, caracs ; au demarrage et tous les CFG.passEvery combats
 async function managePass(page) {
   S.status = 'gestion';
@@ -1030,6 +1045,7 @@ async function managePass(page) {
   await safe('carac', allocateStats(page));
   for (const k of ['coffres', 'deck', 'inventaire', 'hdv', 'carac']) S.last[k] = Date.now();
   if (!ZONES) await safe('zones', allZones(page)); // niveaux des zones pour le garde-fou (une fois par lancement)
+  if (!S.last.forge) await safe('forge', visitForge(page)); // 1re visite : Bouclier de forge offert
   await page.goto(COMBAT);
 }
 
@@ -1089,6 +1105,9 @@ while (true) {
     await ctx.close();
     process.exit(2);
   }
+  // fenetres d'annonce (ex. "Rejoins le Discord !" pour la Forgemagie) : elles recouvrent la page et bloquent les clics -> "Plus tard"
+  const later = page.getByRole('button', { name: 'Plus tard', exact: true });
+  if (await later.isVisible().catch(() => false)) { await later.click().catch(() => {}); log('ANNONCE fermee (Plus tard)'); await sleep(800); idleSince = Date.now(); continue; }
   if (S.queue[0] === 'f5') { S.queue.shift(); log('ACTION f5 (tableau de bord)'); await page.goto(COMBAT); idleSince = Date.now(); continue; }
   if (S.paused) { S.status = 'pause'; await sleep(1000); idleSince = Date.now(); continue; }
   const text = await page.locator('body').innerText().catch(() => '');
