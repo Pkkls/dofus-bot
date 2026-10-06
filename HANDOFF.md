@@ -116,3 +116,9 @@ Bilan avant : 51/51 victoires depuis 13:50 (~186/189 au total), 2,3 cartes/tour,
 - Zones : `S.learn.zones[zone]` (XP/min et victoires, moyennes glissantes, niveau du perso a la mesure). Tous les 20 combats, bascule vers la zone a la meilleure XP/min parmi celles gagnees au taux vise et mesurees a +-10 niveaux, si elle bat la zone actuelle de 20 %.
 - XP hard (bouton) : plus gros groupes, palier suivant a chaque victoire, 1re defaite -> palier precedent et montee normale.
 - Tout est visible dans le module "Moteur de combat" du tableau de bord (Build, Meilleures zones).
+
+## Pats et deblocage par hypotheses (06/10)
+
+- Pat = PV+protection ennemis qui ne baissent plus (3 tours sans entamer). `STALL_HYPOS` testees 2 tours chacune : tout aux degats, focus le plus entame, focus le moins resistant, aucun soin ni bouclier. Celle qui fait baisser les PV ennemis est gardee ; resultats appris par groupe d'ennemis (`S.learn.stall[noms]`) et reutilises des le tour 1 au combat suivant. Fuite seulement si toutes echouent.
+- Arene : adversaire qui nous bat ou nous bloque evite jusqu'a +3 niveaux ou un deck different (`S.learn.arenaAvoid`, `deckKey()`), pas de duree fixe (demande de kil : le perso evolue vite).
+- Deblocage de page (`unblock`) : signature = chemin + titre de main ; actions sures testees, F5 en tete, la meilleure apprise d'abord (`S.learn.unblock`). Page d'erreur serveur -> F5 immediat ; page figee stuckSec (15 s) -> deblocage.
