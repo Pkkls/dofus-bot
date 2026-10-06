@@ -271,6 +271,17 @@ async function optimizeRings(page, main) {
   let sack = await scan();
   for (let round = 0; round < 4 && sack.length; round++) {
     const [n1, n2] = await worn(), s = [scoreOf(n1), scoreOf(n2)];
+    if ((!n1 || !n2) && S.emptySlots?.includes('Anneau')) { // emplacement libre (ex. apres un prestige) : le meilleur du sac y va, bouton "Equiper" simple
+      const best = sack.reduce((a, b) => (b.own > a.own ? b : a));
+      if ((await openItem(main, items.nth(best.i)))?.name !== best.name) break;
+      await main.getByRole('button', { name: /^Équiper/ }).first().click();
+      await sleep(1500);
+      log(`EQUIPE (inventaire) Anneau libre: ${best.name} (score ${Math.round(best.own)})`);
+      decide(`Anneaux : emplacement libre, j'y mets ${best.name} (score ${Math.round(best.own)})`);
+      if (n1 || n2) S.emptySlots = S.emptySlots.filter((x) => x !== 'Anneau'); // il n'en restait qu'un de libre
+      sack = await scan();
+      continue;
+    }
     if (!n1 || !n2) { decide(`Anneaux : emplacements portes illisibles (${n1 ?? '?'}, ${n2 ?? '?'}), je ne touche a rien`); break; }
     const best = sack.reduce((a, b) => (b.own > a.own ? b : a));
     let slot = 0;
