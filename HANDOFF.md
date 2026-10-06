@@ -84,3 +84,7 @@ Au 2026-10-06 : plage horaire active (scheduleOn 1) de 13:00 a 06:00 (activeFrom
 
 - `explore.mjs <chemin>` : dump lecture seule d'une page dans `dump/` (texte + controles).
 - `explore-rings.mjs` : sonde de la grille d'inventaire (anneaux).
+
+## Indices de defaite (06/10)
+
+A chaque defaite : ecran complet dans `dump/defaite-<ts>.txt`, ligne d'indice au log (`INDICE`) et dans `S.hints` par monstre. `rulesOf()` traduit l'indice en regles ; une seule reconnue pour l'instant : "meme element deux fois de suite" (renvoi) -> `orderCards` alterne les elements depuis le dernier joue et `planValue` compte une repetition comme degats renvoyes. `HINT_SEED` contient les indices connus avant capture (Phossile). Ajouter une regle par nouvel indice capture. Limite : element d'une carte = son 1er element de degats.

@@ -433,15 +433,44 @@ const pickTrainProfile = () => {
 const rewardProfile = (k, win, turns) => { const p = ((S.learn ??= {}).prof ??= {})[k] ??= { n: 0, r: 0, w: 0 }; p.n++; p.w += win ? 1 : 0; p.r += win ? 1 - Math.min(turns, 20) / 40 : 0; };
 // valeur d'un plan (cartes jouees ce tour) avec un focus pour les cartes mono-cible
 // ponytail: degats ennemis estimes par ce qu'on a encaisse au tour precedent ; critiques, PM, retraits de PA ignores
-const planValue = (cards, st, focus, inc, s, P = PROFILES.equilibre) => {
+// Indices de defaite (S.hints, par monstre) traduits en regles. HINT_SEED : indices connus avant leur capture automatique.
+const HINT_SEED = { Phossile: 'Utiliser deux fois de suite le meme element lui renvoie les degats' };
+const hintOf = (name) => {
+  const all = { ...HINT_SEED, ...Object.fromEntries(Object.entries(S.hints ?? {}).map(([k, v]) => [k, v.hint])) };
+  const k = Object.keys(all).find((n) => name === n || name.startsWith(n + ' ') || n.startsWith(name + ' '));
+  return k ? all[k] : '';
+};
+// ponytail: une seule regle reconnue pour l'instant ; en ajouter une par nouvel indice capture (dump/defaite-*.txt)
+const rulesOf = (name) => { const t = hintOf(name); return { altElem: /m[êe]me [ée]l[ée]ment/i.test(t) && /(deux fois|de suite|cons[ée]cuti|renvo)/i.test(t) }; };
+const elemOf = (c) => c.fx.dmg[0]?.elem ?? null;
+// ordre de jeu : buffs, mono-cible, zone, soins ; si un ennemi interdit la repetition d'element, on alterne (depuis le dernier element joue)
+const orderCards = (cards, st, last) => {
+  const rank = (c) => (c.fx.pow ? 0 : c.fx.dmg.some((d) => !d.zone) ? 1 : c.fx.dmg.length ? 2 : 3);
+  const sorted = [...cards].sort((a, b) => rank(a) - rank(b));
+  if (!st.enemies.some((e) => e.hp > 0 && rulesOf(e.name).altElem)) return sorted;
+  const seq = [];
+  for (let prev = last; sorted.length;) {
+    let k = sorted.findIndex((c) => !elemOf(c) || elemOf(c) !== prev);
+    if (k < 0) k = 0;
+    const [c] = sorted.splice(k, 1);
+    seq.push(c); if (elemOf(c)) prev = elemOf(c);
+  }
+  return seq;
+};
+const planValue = (cards, st, focus, inc, s, P = PROFILES.equilibre, last = null) => {
   const alive = st.enemies.filter((e) => e.hp > 0);
   const left = new Map(alive.map((e) => [e.i, e.hp + e.prot]));
   const pow = st.pow + cards.reduce((a, c) => a + c.fx.pow, 0);
-  let v = 0, heal = 0;
-  for (const c of cards) for (const d of c.fx.dmg) for (const e of d.zone ? alive : alive.filter((x) => x.i === focus)) {
+  let v = 0, heal = 0, prev = last;
+  for (const c of cards) {
+    const repeat = elemOf(c) && elemOf(c) === prev;
+    if (elemOf(c)) prev = elemOf(c);
+    for (const d of c.fx.dmg) for (const e of d.zone ? alive : alive.filter((x) => x.i === focus)) {
+    if (repeat && rulesOf(e.name).altElem) { v -= hitOn(d, e, pow, s); continue; } // renvoye : rien pour lui, pour nous
     const done = Math.min(hitOn(d, e, pow, s), left.get(e.i));
     left.set(e.i, left.get(e.i) - done);
     v += done; if (d.steal) heal += done / 2;
+    }
   }
   const threat = inc / Math.max(1, alive.length);
   for (const e of alive) if (left.get(e.i) <= 0) v += 0.25 * e.max + P.kill * threat * (e.rage ? 1.5 : 1); // tuer = moins de coups recus
@@ -460,12 +489,11 @@ const bestMove = (st, inc, s, weaponUsed, blocked, P) => {
   for (let mask = 1; mask < 1 << hand.length; mask++) {
     const cards = hand.filter((_, k) => mask & (1 << k));
     if (cards.reduce((a, c) => a + c.cost, 0) > st.pa) continue;
-    for (const e of alive) { const v = planValue(cards, st, e.i, inc, s, P); if (v > best.v + 1e-6) best = { v, cards, focus: e }; }
+    const seq = orderCards(cards, st, fightMem.lastElem);
+    for (const e of alive) { const v = planValue(seq, st, e.i, inc, s, P, fightMem.lastElem); if (v > best.v + 1e-6) best = { v, cards: seq, focus: e }; }
   }
   if (!best.cards) return null;
-  // ordre : buffs de puissance, puis degats (mono-cible avant zone), puis soins/boucliers (le vol de vie a deja soigne)
-  const rank = (c) => (c.fx.pow ? 0 : c.fx.dmg.some((d) => !d.zone) ? 1 : c.fx.dmg.length ? 2 : 3);
-  const first = [...best.cards].sort((a, b) => rank(a) - rank(b))[0];
+  const first = best.cards[0]; // deja ordonne par orderCards
   return { card: first, focus: best.focus, plan: best.cards.map((c) => c.name), v: best.v, single: first.fx.dmg.some((d) => !d.zone) };
 };
 let fightMem = { turn: 0, endHp: null, inc: 0, profile: null };
@@ -478,6 +506,8 @@ async function playTurn(page) {
   if (st.turn <= 1 || !fightMem.profile) fightMem = { turn: st.turn, endHp: null, inc: 0, profile: trainLeft > 0 ? pickTrainProfile() : pickProfile(), ehp0: st.enemies.reduce((a, e) => a + e.max, 0) };
   fightMem.ehp = st.enemies.reduce((a, e) => a + e.hp + e.prot, 0);
   fightMem.foes = st.enemies.map((e) => e.name); // pour ranger l'indice de defaite par monstre
+  const ruled = st.enemies.filter((e) => e.hp > 0 && rulesOf(e.name).altElem).map((e) => e.name);
+  if (ruled.length && !fightMem.ruleSaid) { fightMem.ruleSaid = true; decide(`Mecanique ${ruled.join(', ')} (indice) : j'alterne les elements, jamais deux fois le meme de suite`); }
   fightMem.turn = st.turn;
   const P = PROFILES[fightMem.profile];
   if (fightMem.incTurn !== st.turn) { // une seule estimation par tour, meme si le tour est joue en plusieurs appels
@@ -527,6 +557,7 @@ async function playTurn(page) {
       const real = ehp(before) - ehp(after);
       if (pred > 0 && real > 0) { const K = ((S.learn ??= {}).k ??= {}); K[d0.elem] = Math.min(3, Math.max(0.3, 0.85 * k0 + 0.15 * (real / pred))); }
     }
+    if (elemOf(mv.card)) fightMem.lastElem = elemOf(mv.card);
     played.push(`${mv.card.name}${mv.single ? ' > ' + mv.focus.name : ''}`);
     plays++; st = after;
     if (!st.myTurn || !st.enemies.some((e) => e.hp > 0)) break; // combat fini
@@ -707,6 +738,10 @@ if (process.argv[2] === 'test') {
     const mv = bestMove(st, 300, s, false, new Set(), PROFILES.equilibre);
     const cost = mv.plan.reduce((a, n) => a + st.hand.find((c) => c.name === n).cost, 0);
     assert.ok(mv && !mv.plan.includes('Secourisme') && cost <= 9 && cost >= 8, JSON.stringify(mv?.plan));
+    { const stP = { ...st, enemies: [{ ...st.enemies[0], name: 'Phossile' }] };
+      const seq = orderCards(['Boliche', 'Bâton du Shamansot', 'Cubitus'].map((n) => ({ ...stP.hand.find((c) => c.name === n) ?? card(n, 3, ['29 à 32 dommages Eau']), fx: cardFx((stP.hand.find((c) => c.name === n) ?? { lines: ['29 à 32 dommages Eau'] }).lines) })), stP, null);
+      assert.ok(seq.every((c, k) => !k || elemOf(c) !== elemOf(seq[k - 1])), seq.map((c) => c.name).join()); // Eau, Feu, Eau
+    }
     const hurt = bestMove({ ...st, hp: 600 }, 900, s, false, new Set(), PROFILES.equilibre);
     assert.ok(hurt.plan.includes('Secourisme'), JSON.stringify(hurt.plan)); // en danger : soin
   }
@@ -1003,7 +1038,7 @@ while (true) {
       const i = lines.findIndex((l) => /indice|astuce|conseil|m[ée]canique|faiblesse|pense [àa]/i.test(l));
       const hint = i >= 0 ? lines.slice(i, i + 3).join(' / ') : lines.slice(Math.max(0, lines.findIndex((l) => /Défaite/.test(l))), lines.findIndex((l) => /Défaite/.test(l)) + 4).join(' / ');
       const foes = fightMem.foes?.join(', ') || '?';
-      ((S.hints ??= {})[foes] = { hint, at: Date.now() });
+      for (const f of fightMem.foes ?? []) (S.hints ??= {})[f] = { hint, at: Date.now(), with: foes };
       log(`INDICE (${foes}) ${hint.slice(0, 300)}`);
       decide(`Defaite contre ${foes} : indice du jeu "${hint.slice(0, 200)}"`);
     }
