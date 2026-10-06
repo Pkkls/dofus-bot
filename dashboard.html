@@ -385,8 +385,12 @@ details[open].card > summary .chev { transform: rotate(180deg); }
         </div>
       </section>
       <section class="card">
-        <h2 class="card-h"><svg class="i"><use href="#i-swords"/></svg>Adversaires d'arene evites</h2>
-        <div class="card-b"><div id="m-avoid" class="notes">aucun</div></div>
+        <h2 class="card-h"><svg class="i"><use href="#i-map"/></svg>Meilleurs spots XP<span class="aside" id="sp-best"></span></h2>
+        <div class="card-b">
+          <div class="cards" id="sp-list"></div>
+          <div class="sub">Adversaires d'arene evites</div>
+          <div id="m-avoid" class="notes">aucun</div>
+        </div>
       </section>
       <section class="card feedcard short span-c3">
         <h2 class="card-h"><svg class="i"><use href="#i-swords"/></svg>Tours de combat<span class="aside" id="t-count"></span></h2>
@@ -557,6 +561,7 @@ const ACTS = {
   boss: ['Boss', 'crown', 'tenter maintenant'],
   forge: ['Forge', 'sparkles', 'ameliorer le bouclier'],
   energie: ['Energie max', 'zap', 'acheter le plein, 300 K le point'],
+  spots: ['Spots XP', 'map', 'mesurer les zones et garder la meilleure'],
   xphard: ['XP hard', 'swords', 'monter jusqu\'a la defaite puis s\'adapter'],
   entrainement: ['Entrainement', 'brain', 'combats perdus d\'avance pour apprendre'],
   zone: ['Zone facile', 'map', 'changer de zone'],
@@ -732,6 +737,10 @@ function render(d) {
   $('m-avoid').innerHTML = av.length ? av.map(([k, v]) => `<div><b>${esc(k)}</b> : evite depuis le niv ${v.lvl}, retente au niv ${v.lvl + 3} ou avec un autre deck</div>`).join('') : 'aucun';
   const W = L.wisLog ?? [];
   $('m-wis').textContent = W.length ? W.slice(0, 4).map((w) => `niv ${w.lvl} : ${w.sag}${w.add ? ' (+' + w.add + ')' : ''}, ${short(w.xpf)} XP/victoire, defaites ${w.loss == null ? '?' : pct(w.loss)}`).join(' | ') : 'releve a la prochaine repartition';
+  const bs = L.bestSpot;
+  $('sp-best').textContent = bs ? `actuel : ${bs.name}` : '';
+  const spots = Object.entries(L.zones ?? {}).filter(([, z]) => z.n >= 3).sort((a, z) => z[1].xpm - a[1].xpm).slice(0, 8);
+  $('sp-list').innerHTML = spots.map(([k, z], i) => `<div class="cardx"><span class="cost">${i + 1}</span><span class="n">${esc(z.name ?? k.replace('/chasse?zone=', 'zone '))}${z.min ? ` <span class="muted">· ${z.min}-${z.max}</span>` : ''}</span><span class="m num">${fmt(z.xpm)} XP/min · ${pct(z.win)} · niv ${z.lvl}</span></div>`).join('') || '<div class="empty">Clique sur "Spots XP" pour mesurer les zones.</div>';
   const B = L.build;
   $('m-build').textContent = B?.n ? `PV mini moyens ${pct(B.minHp)}, defaites ${pct(B.loss)} sur ${B.n} combats${L.wisTip ? ' ; sagesse : ' + L.wisTip.slice(0, 60) : ''}` : 'en cours d\'apprentissage';
   const zs = Object.entries(L.zones ?? {}).filter(([, z]) => z.n >= 3).sort((a, z) => z[1].xpm - a[1].xpm).slice(0, 3);

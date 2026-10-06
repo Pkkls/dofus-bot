@@ -74,7 +74,7 @@ const KEEP = ['huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hint
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
-const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'xphard', 'entrainement', 'zone', 'aventure', 'f5'];
+const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'spots', 'xphard', 'entrainement', 'zone', 'aventure', 'f5'];
 // horaires en minutes depuis minuit ; une plage peut passer minuit (ex. 540 -> 60 = 09:00 -> 01:00)
 const inWindow = (m, a, b) => a === b || (a < b ? m >= a && m < b : m >= a || m < b);
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -1293,7 +1293,29 @@ let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastTe
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = S.huntLeft ?? 0, backToAdventure = false; // rattrapage garde entre redemarrages
 // Aventure prioritaire : hors rattrapage XP (apres une defaite d'aventure), XP hard et entrainement. Chemin bloque/fini -> chasse, nouvel essai 30 min apres
-const wantAdventure = () => huntLeft === 0 && !xpHard && trainLeft === 0 && Date.now() > (S.advBlockedUntil ?? 0);
+const wantAdventure = () => huntLeft === 0 && !xpHard && trainLeft === 0 && !spotQueue.length && Date.now() > (S.advBlockedUntil ?? 0);
+// Spots XP (bouton) : zones candidates mesurees chacune sur SPOT_FIGHTS combats, puis installation sur la meilleure XP/min
+let spotQueue = [], spotFights = 0;
+const SPOT_FIGHTS = 3;
+async function planSpots(page) {
+  const z = await allZones(page);
+  const reach = S.level + Math.max(5, S.learn?.hard?.offset ?? 10); // jusqu'a la limite apprise par XP hard
+  const cand = z.filter(([, mx, , mn]) => mn <= reach && mx >= S.level - 10).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  spotQueue = cand.map(([hr]) => hr); spotFights = 0;
+  decide(`Spots XP : ${cand.length} zones a mesurer (${SPOT_FIGHTS} combats chacune) : ${cand.map(([, mx, nm, mn]) => `${nm} ${mn}-${mx}`).join(', ')}`);
+  log(`SPOTS mesure de ${cand.length} zones`);
+  return false;
+}
+function pickSpot() {
+  const Z = S.learn?.zones ?? {};
+  const ok = Object.entries(Z).filter(([, s]) => s.n >= SPOT_FIGHTS && s.win >= CFG.targetWin && Math.abs(s.lvl - S.level) <= 10).sort((a, b) => b[1].xpm - a[1].xpm);
+  const best = ok[0];
+  if (!best) { decide('Spots XP : aucune zone mesuree ne tient le taux de victoire vise, je garde la zone actuelle'); return; }
+  zone = best[0]; climbHist = []; climbStreak = 0;
+  (S.learn ??= {}).bestSpot = { href: best[0], name: best[1].name ?? best[0], xpm: Math.round(best[1].xpm), win: best[1].win, lvl: S.level, at: Date.now() };
+  decide(`Spots XP : meilleure zone ${best[1].name ?? best[0]} a ${Math.round(best[1].xpm)} XP/min (victoires ${Math.round(best[1].win * 100)} %), je m'y installe`);
+  log(`SPOTS meilleur ${best[1].name ?? best[0]} ${Math.round(best[1].xpm)} XP/min`);
+}
 async function goAdventure(page) {
   await page.goto(BASE + '/aventure').catch(() => {});
   const b = page.locator('button', { hasText: ADV_FIGHT }).first();
@@ -1347,7 +1369,7 @@ let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
-  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
+  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, spots: planSpots, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
   aventure: async (p) => { huntLeft = 0; S.advBlockedUntil = 0; xpHard = false; S.xpHard = false; return goAdventure(p); }, // l'aventure reste ensuite prioritaire (wantAdventure)
 };
@@ -1467,6 +1489,7 @@ while (true) {
     if (!fight && win && g) { const L = (S.learn ??= {}); const x = +g[1].replace(/\D/g, ''); L.xpf = L.xpf ? 0.9 * L.xpf + 0.1 * x : x; } // XP moyenne par victoire de chasse (validation sagesse)
     if (!fight && S.attackZone && S.attackAt && Date.now() - S.attackAt < 900000) { // stats de zone (chasse) : moyennes glissantes
       const Z = (((S.learn ??= {}).zones ??= {})[S.attackZone] ??= { n: 0, win: 0.9, xpm: 0, lvl: S.level });
+      if (!Z.name) { const zz = ZONES?.find(([hr]) => hr === S.attackZone); if (zz) { Z.name = zz[2]; Z.min = zz[3]; Z.max = zz[1]; } }
       const xpm = (win && g ? +g[1].replace(/\D/g, '') : 0) / ((Date.now() - S.attackAt) / 60000);
       Z.n++; Z.win = 0.85 * Z.win + 0.15 * (win ? 1 : 0); Z.xpm = Z.n === 1 ? xpm : 0.8 * Z.xpm + 0.2 * xpm; Z.lvl = S.level;
       S.attackAt = 0;
@@ -1608,6 +1631,14 @@ while (true) {
       await attackGroup(page, zone, 0);
       continue;
     }
+    if (spotQueue.length && !adventure) { // mesure en cours : SPOT_FIGHTS combats par zone candidate
+      if (spotFights >= SPOT_FIGHTS) { spotQueue.shift(); spotFights = 0; }
+      if (!spotQueue.length) { pickSpot(); }
+      else {
+        zone = spotQueue[0]; spotFights++;
+        if ((await safe('attaque', attackGroup(page, zone, grpRank()))) === true) continue;
+      }
+    }
     if (climbDir && zone && !adventure) { // chasse : on monte tant qu'on gagne, on redescend a la premiere defaite
       zone = await climbZone(page, zone, climbDir, xpHard ? 'XP hard, victoire' : `taux de victoire ${climbDir > 0 ? 'au-dessus de' : 'sous'} la cible ${Math.round(CFG.targetWin * 100)} %`);
       climbDir = 0;
@@ -1626,7 +1657,7 @@ while (true) {
         if (!S.queue.includes('deck')) S.queue.push('deck');
       }
     }
-    if (CFG.hardEvery && CFG.manualFight && !xpHard && zone && !adventure && !S.recharging && S.level - (S.learn?.hard?.lvl ?? 0) >= CFG.hardEvery) {
+    if (CFG.hardEvery && CFG.manualFight && !xpHard && !spotQueue.length && zone && !adventure && !S.recharging && S.level - (S.learn?.hard?.lvl ?? 0) >= CFG.hardEvery) {
       xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0;
       decide(`XP hard automatique : ${S.learn?.hard?.n ? `${S.level - S.learn.hard.lvl} niveaux depuis la derniere mesure` : 'limite jamais mesuree'}, je recherche ma limite`);
       log('XP HARD demarre (auto)');
