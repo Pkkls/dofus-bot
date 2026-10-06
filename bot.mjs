@@ -1433,7 +1433,8 @@ async function startAbyss(page) {
 async function abyssChoice(page, text) {
   const inRun = S.abyssRun && Date.now() - S.abyssRun.start < 3 * 3600000;
   if (!/\/abysses/i.test(page.url()) && !(inRun && /carte bonus|Choisis|choisir|nouveau sort|Étage \d+/i.test(text))) return false; // le menu contient "Abysses" sur toutes les pages
-  if (/À toi de jouer|Tour de /.test(text)) return false; // combat : playTurn s'en charge
+  const gameTxt = await page.locator('main').innerText().catch(() => '');
+  if (/À toi de jouer|·\s*Tour \d+/.test(gameTxt)) return false; // combat en cours (zone de jeu seulement : le chat peut contenir n'importe quoi) : playTurn s'en charge
   const run = text.match(/DESCENTE EN COURS\s*\n\s*(\d+)\s*\/\s*100/);
   if (run) { if (!S.abyssRun) { S.abyssRun = { start: Date.now(), floors: +run[1] - 1, bonus: {}, picks: [] }; log(`ABYSSES descente en cours reprise (etage ${run[1]})`); } S.abyssRun.floor = +run[1]; S.abyssRun.start = Date.now(); }
   const btns = page.locator('main').locator('button:visible');
