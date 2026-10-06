@@ -97,7 +97,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['hdvBought', 'rushAsc', 'ascBest', 'seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['ownScore', 'equipLog', 'hdvBought', 'rushAsc', 'ascBest', 'seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -258,16 +258,27 @@ async function equipFromInventory(page) {
       const d = await openItem(main, items.nth(i));
       if (!d || !sameSlot(d.slot, slot) || !(await main.getByRole('button', { name: /^Équiper/ }).first().isEnabled().catch(() => false))) continue; // filtre pas encore applique : objet d'un autre type ignore
       seen.push({ i, ...d });
-      if (d.diff > best) { best = d.diff; bestIdx = i; bestName = d.name; }
+      (S.ownScore ??= {})[d.name] = Math.round(d.own); // score propre memorise : sert a choisir quoi remplacer (emplacements multiples)
+      const churn = (S.equipLog ?? []).filter((e) => e.slot === slot && e.name === d.name && Date.now() - e.t < 86400000).length >= 2; // deja equipe 2 fois en 24 h : oscillation
+      if (d.diff > best && !churn) { best = d.diff; bestIdx = i; bestName = d.name; }
       if (d.diff < 0 && SELLABLE.includes(slot) && canSell(d)) junk.push([d.name, d.diff]);
     }
     const ref = seen.find((x) => x.cmp); // piece portee = score propre - ecart affiche
     if (ref) (S.worn ??= {})[slot] = Math.round(ref.own - ref.diff); else if (S.emptySlots?.includes(slot)) (S.worn ??= {})[slot] = 0;
     decide(`Inventaire ${slot} : ${bestIdx >= 0 ? `j'equipe ${bestName} (score +${Math.round(best)})` : 'rien de mieux que ma piece'}${junk.length ? `, ${junk.length} moins bon(s) a vendre` : ''}`);
-    if (bestIdx >= 0 && (await openItem(main, items.nth(bestIdx)))?.name === bestName) {
-      await main.getByRole('button', { name: /^Équiper/ }).first().click();
-      log(`EQUIPE (inventaire) ${slot}: ${bestName} (score ${Math.round(best)})`);
-      await sleep(1500);
+    const bd = bestIdx >= 0 ? await openItem(main, items.nth(bestIdx)) : null;
+    if (bd?.name === bestName) {
+      // plusieurs emplacements (trophees) : un bouton "Equiper a la place de X" par piece portee -> on remplace la plus faible connue, si on fait mieux
+      const eq = main.getByRole('button', { name: /^Équiper/ });
+      const labels = (await eq.allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+      const targets = labels.map((l, k) => ({ k, name: l.match(/à la place de (.+)$/)?.[1], sc: S.ownScore?.[l.match(/à la place de (.+)$/)?.[1]] ?? 0 }));
+      const tgt = targets.length > 1 ? targets.sort((a, b) => a.sc - b.sc)[0] : targets[0];
+      if (tgt && (targets.length === 1 || bd.own > tgt.sc + 5)) {
+        await eq.nth(tgt.k).click();
+        (S.equipLog ??= []).push({ t: Date.now(), slot, name: bestName }); if (S.equipLog.length > 60) S.equipLog.shift();
+        log(`EQUIPE (inventaire) ${slot}: ${bestName} (score ${Math.round(best)})${tgt.name ? ` a la place de ${tgt.name}` : ''}`);
+        await sleep(1500);
+      }
     }
     await sellJunk(page, main, slot, junk);
   }
