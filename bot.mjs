@@ -1524,7 +1524,9 @@ async function hdvSell(page) {
   await main.locator('button, a').filter({ hasText: /^\s*Vendre\s*$/ }).first().click({ timeout: 5000 });
   await main.getByText(/Mes ventes en cours/).waitFor({ timeout: 10000 });
   const items = main.locator('button[type=submit]');
+  await items.first().waitFor({ timeout: 15000 }).catch(() => {}); // inventaire charge apres le texte
   const n = await items.count();
+  if (!n) { writeFileSync('dump/hdv_sell_form.txt', `AUCUN OBJET\n${await main.innerText()}\n\n=== CONTROLES\n${await controls(main)}`); log('HDV vente : aucun objet trouve, voir dump/hdv_sell_form.txt'); return false; }
   for (let i = 0; i < n; i++) { // premier objet ni lie ni favori
     const t = `${await items.nth(i).innerText().catch(() => '')} ${await items.nth(i).getAttribute('title').catch(() => '')}`;
     if (/LIÉ|★/.test(t)) continue;
