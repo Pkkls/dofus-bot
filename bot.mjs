@@ -911,6 +911,11 @@ async function fightArena(page) {
 
 // HDV : achete de quoi remplir les emplacements vides (vus par la passe inventaire), dans le budget au-dessus de la reserve
 // ponytail: emplacements vides seulement, l'HDV ne montre pas de comparaison avec la piece portee
+// en-tete : "Nom ✦1\nNiv. 152 · 11 403 K" (avant le 07/10) ou "Nom ✦1\nNiv. 200\n25 215\nkamas" (apres)
+const parseHeader = (t) => {
+  const m = t.match(/([^\n]+)\nNiv\. (\d+)(?: · ([\d\s\u00a0\u202f]+) K|\n([\d\s\u00a0\u202f]+)\nkamas)/);
+  return m && { name: m[1].trim(), level: +m[2], kamas: +(m[3] ?? m[4]).replace(/\D/g, ''), prestige: +(m[1].match(/✦\s*(\d+)/)?.[1] ?? 0) };
+};
 // etage d'Ascension exige pour un prestige donne ("etage 20 termine pour passer Prestige 4 ; etage 30, ... pour le Prestige 5"), null si non dit
 const prestigeFloor = (t, p) => [...t.matchAll(/[ée]tage (\d+)[^;\n]*?Prestige (\d+)/gi)].find((m) => +m[2] === p)?.[1] ?? null;
 const parseHdvRows = (t) => [...t.matchAll(/\n([^\n]+)\n(?:Niveau (\d+) · vendu par [^\n]*|Niv\. (\d+) · [^\n]+\npar [^\n]*)\n([\d\s\u00a0\u202f]+) K\n(Acheter|Trop cher)/g)]
@@ -1025,6 +1030,8 @@ if (process.argv[2] === 'test') {
   assert.deepEqual([AR.elo, AR.opti, AR.rank, AR.energy, AR.opp.length, AR.opp[1].name, AR.opp[1].opti], [985, 2302, '6145', 148, 2, 'Pad', 2036]);
   const HR = parseHdvRows('\nFiltrer\nYugoufle\nNiveau 41 · vendu par Hadu\n300 K\nAcheter\n★\nKompost · Rayonnant\nNiveau 60 · vendu par Ouateu\n1 500 K\nTrop cher');
   assert.deepEqual(HR.map((r) => [r.name, r.level, r.price, r.buyable]), [['Yugoufle', 41, 300, true], ['Kompost', 60, 1500, false]]);
+  assert.deepEqual(parseHeader('RpgMasters\nBernardarnault ✦1\nNiv. 200\n25 215\nkamas\nTableau de bord'), { name: 'Bernardarnault ✦1', level: 200, kamas: 25215, prestige: 1 });
+  assert.deepEqual(parseHeader('DofusMasters\nPerso\nNiv. 152 · 11 403 K\nDéconnexion'), { name: 'Perso', level: 152, kamas: 11403, prestige: 0 });
   const ASC = 'Pour refaire un Prestige : étage 20 terminé pour passer Prestige 4 ; étage 30, 1600 d’Elo et 500 000 dégâts cumulés au Kralamoure pour le Prestige 5 ; étage 40, 2000 d’Elo pour le Prestige 6.';
   assert.equal(prestigeFloor(ASC, 4), '20'); assert.equal(prestigeFloor(ASC, 5), '30'); assert.equal(prestigeFloor(ASC, 2), null);
   assert.deepEqual(parseHdvRows('\n400 offres\nSoubretture\nNiv. 10 · Ceinture\npar Kkkkkk\n750 K\nAcheter').map((r) => [r.name, r.level, r.price, r.buyable]), [['Soubretture', 10, 750, true]]);
@@ -1136,8 +1143,9 @@ const parseLog = () => {
 };
 // en-tete du jeu : "Nom", puis "Niv. 72 · 26 690 K"
 const readHeader = (text) => {
-  const hd = text.match(/([^\n]+)\nNiv\. (\d+) · ([\d\s]+) K/);
-  if (hd) Object.assign(S, { name: hd[1].trim(), level: +hd[2], kamas: +hd[3].replace(/\D/g, ''), prestige: +(hd[1].match(/✦\s*(\d+)/)?.[1] ?? 0) });
+  const hd = parseHeader(text);
+  if (!hd && !existsSync('dump/header.txt')) writeFileSync('dump/header.txt', text.slice(0, 1500)); // en-tete change (maj du site) : capture pour adapter
+  if (hd) Object.assign(S, hd);
   if (hd && S.level !== S.levelHist?.at(-1)?.lvl) { (S.levelHist ??= []).push({ t: Date.now(), lvl: S.level }); if (S.levelHist.length > 400) S.levelHist.shift(); } // progression
 };
 function startDashboard(page) {
