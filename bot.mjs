@@ -1259,7 +1259,7 @@ await managePass(page);
 let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastText = '', combats = 0;
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
-let clickFails = [], myWaitSince = 0; // clics expires recents (fenetre inconnue) ; debut d'un "Tour de moi..." fige
+let clickFails = [], myWaitSince = 0, satStreak = 0; // clics expires recents (fenetre inconnue) ; debut d'un "Tour de moi..." fige
 // XP hard (bouton) : plus gros groupes, palier suivant a chaque victoire, 1re defaite -> un cran plus bas puis montee normale
 // Deblocage appris (S.learn.unblock[signature][action] = { ok, ko }) : page figee 30 s -> une action sure a la fois, la meilleure connue d'abord.
 // Jamais : achats/ventes/brisage, fuite, deconnexion, guilde, reinitialisation, Discord, test de presence (traite avant).
@@ -1345,7 +1345,16 @@ while (true) {
   Object.assign(S, { huntLeft, zone, strikes, status: 'combat' });
 
   // rate-limit de l'hebergeur (o2switch) : on respecte, pause 5 min
-  if (/HTTP 429|Slow down/.test(text)) { S.status = 'rate-limit'; decide('Serveur sature (429) : pause 5 min pour ne pas aggraver'); log('RATE LIMIT 429 - pause 5 min'); await sleep(300000); await page.goto(COMBAT).catch(() => {}); idleSince = Date.now(); continue; }
+  // serveur sature : 429 ou page 508 de l'hebergeur ("Resource Limit Is Reached") -> attente qui double a chaque recidive (60 s -> 9 min), remise a zero des qu'une page passe
+  if (/HTTP 429|Slow down|Resource Limit Is Reached|508 Resource/i.test(text)) {
+    const what = /Resource Limit/i.test(text) ? 'limite de ressources de l\'hebergeur (508)' : 'trop de requetes (429)';
+    const ms = Math.min(540000, 60000 * 2 ** satStreak++);
+    S.status = 'rate-limit';
+    decide(`Serveur sature, ${what} : pause ${Math.round(ms / 1000)} s puis rechargement (${satStreak}e fois d'affilee)`);
+    log(`RATE LIMIT ${what} - pause ${Math.round(ms / 1000)} s`);
+    await sleep(ms); await page.reload().catch(() => {}); idleSince = Date.now(); continue;
+  }
+  satStreak = 0;
 
   // ecran d'inactivite ("Tu etais inactif", place liberee, progression sauvegardee) : pas un controle anti-bot, juste un slot rendu.
   // On attend d'avoir le droit de jouer (energie, plage horaire) puis on recharge la page pour reprendre sa place, sans cliquer dedans.
