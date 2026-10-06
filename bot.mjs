@@ -948,9 +948,12 @@ async function hdvBuy(page) {
     const posts = [];
     const onResp = async (r) => { if (r.request().method() === 'POST') posts.push(`${r.status()} ${r.url().slice(-60)} :: ${(await r.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 600)}`); };
     page.on('response', onResp);
+    const onDlg = (dg) => { posts.push(`dialogue : ${dg.message()}`); dg.accept().catch(() => {}); }; // confirmation navigateur (refusee par defaut par Playwright)
+    page.once('dialog', onDlg);
     await buyBtn.first().click();
     await sleep(2500);
-    page.off('response', onResp);
+    page.off('response', onResp); page.off('dialog', onDlg);
+    if (posts.some((p) => p.startsWith('dialogue'))) log(`HDV ${posts.find((p) => p.startsWith('dialogue')).slice(0, 150)}`);
     // la confirmation peut etre une modale hors de main : on cherche dans toute la page
     const after = `${await page.locator('body > *:not(main)').allInnerTexts().then((a) => a.join(' | ')).catch(() => '')}\n--- boutons hors main: ${await page.locator('button:visible').evaluateAll((els) => els.filter((e) => !e.closest('main')).map((e) => e.innerText.replace(/\s+/g, ' ').trim()).filter(Boolean).join(' | '))}`;
     const ok = page.getByRole('button', { name: /^(Confirmer|Oui|Valider|Payer)/ });
