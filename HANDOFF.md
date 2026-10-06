@@ -108,3 +108,11 @@ Bilan avant : 51/51 victoires depuis 13:50 (~186/189 au total), 2,3 cartes/tour,
 - Ascension (prestige + niveau 200) : etages de boss, 2 energie, coffre par nouvel etage. Pas encore code (perso niv 53).
 - Guilde : "Entrer dans la Faille", pas encore explore.
 - Fenetres d'annonce ("Rejoins le Discord !") fermees par "Plus tard". Clics qui expirent 2 fois en 3 min : capture `dump/bloque-*` + alerte (fenetre inconnue, ex. anti-AFK non reconnu).
+
+## Gestion du personnage auto-optimisee (06/10)
+
+- Deck : `cardValue` multiplie par le correctif appris en combat `S.learn.k[elem]` (degats reels / prevus).
+- Caracs : `vitShareNow()` adapte la part de vitalite a `S.learn.build` (moyennes glissantes des PV mini atteints et des defaites en combat manuel) : defaites > 15 % ou PV mini < 35 % -> +15 pts ; PV mini > 75 % sans defaite -> -10 pts ; bornee 5-60 %. Le poids de la Vitalite dans le score d'objet suit le meme besoin.
+- Zones : `S.learn.zones[zone]` (XP/min et victoires, moyennes glissantes, niveau du perso a la mesure). Tous les 20 combats, bascule vers la zone a la meilleure XP/min parmi celles gagnees au taux vise et mesurees a +-10 niveaux, si elle bat la zone actuelle de 20 %.
+- XP hard (bouton) : plus gros groupes, palier suivant a chaque victoire, 1re defaite -> palier precedent et montee normale.
+- Tout est visible dans le module "Moteur de combat" du tableau de bord (Build, Meilleures zones).
