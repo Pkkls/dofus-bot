@@ -290,7 +290,14 @@ async function optimizeRings(page, main) {
     else { const weak = s[0] <= s[1] ? 1 : 2; if (best.own > s[weak - 1]) slot = weak; }
     if (!slot) { decide(`Anneaux : paire optimale (${n1} ${Math.round(s[0])}, ${n2} ${Math.round(s[1])}), rien de mieux au sac (meilleur ${best.name} ${Math.round(best.own)})`); break; }
     if ((await openItem(main, items.nth(best.i)))?.name !== best.name) break; // la grille a bouge : on s'arrete proprement
-    await main.getByRole('button', { name: new RegExp(`\\(Anneau ${slot}\\)$`) }).click();
+    // par le texte : un title sur le bouton remplace son nom accessible
+    const slotBtn = main.locator('button', { hasText: new RegExp(`Anneau ${slot}\\)?\\s*$`) }).first();
+    if (!(await slotBtn.isVisible().catch(() => false))) {
+      const equips = await main.locator('button', { hasText: /^Équiper/ }).allInnerTexts().catch(() => []);
+      decide(`Anneaux : bouton de l'emplacement ${slot} introuvable (boutons : ${equips.map((t) => t.replace(/\s+/g, ' ')).join(' | ') || 'aucun'}), j'arrete la`);
+      break;
+    }
+    await slotBtn.click();
     await sleep(1500);
     const why = s[slot - 1] === undefined ? `decouverte du score de ${slot === 1 ? n1 : n2}` : `${Math.round(best.own)} > ${Math.round(s[slot - 1])}`;
     log(`EQUIPE (inventaire) Anneau ${slot}: ${best.name} (score ${Math.round(best.own)}, ${why})`);
