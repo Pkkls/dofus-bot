@@ -1337,11 +1337,13 @@ let clickFails = [], myWaitSince = 0, satStreak = 0, inQueue = false, chatDeadSi
 const UNBLOCK_OK = /^(Partir|Retour|Continuer|Plus tard|Fermer|OK|Compris|J.ai compris|Suivant|Étape suivante|Chasse libre|Autres groupes|Refaire ce combat|Réessayer|Passer|Valider|Reprendre|Fin du tour)/i;
 const UNBLOCK_NO = /Acheter|Vendre|Briser|Fuir|Déconnexion|Dissoudre|Réinitialiser|Supprimer|Abandonner|Payer|Discord|Défier|Améliorer|Fusionner|Équiper|Ouvrir/i;
 let unblockPending = null, unblockTried = new Set();
-async function unblock(page, text) {
-  // signature = chemin + titre de la page (contenu de main, hors en-tete/nom du perso), chiffres masques
-  const mainText = await page.locator('main').innerText().catch(() => text);
+// signature d'ecran = chemin + titre de la page (contenu de main, hors en-tete/nom du perso), chiffres masques
+const screenSig = (url, mainText) => {
   const title = mainText.split('\n').map((l) => l.trim()).find((l) => l.length > 3 && !(S.name && l.includes(S.name)) && !/DofusMasters|Annonce|Événement|Déconnexion/.test(l)) ?? '';
-  const sig = `${new URL(page.url()).pathname} | ${title.replace(/\d+/g, '#').slice(0, 50)}`;
+  return `${new URL(url).pathname} | ${title.replace(/\d+/g, '#').slice(0, 50)}`;
+};
+async function unblock(page, text) {
+  const sig = screenSig(page.url(), await page.locator('main').innerText().catch(() => text));
   if (unblockPending) { // l'action precedente n'a rien change
     const U = (((S.learn ??= {}).unblock ??= {})[unblockPending.sig] ??= {})[unblockPending.act] ??= { ok: 0, ko: 0 };
     U.ko++; unblockTried.add(unblockPending.act); unblockPending = null;
@@ -1402,7 +1404,8 @@ while (true) {
   } else myWaitSince = 0;
   if (gameText !== lastText) { // la page bouge = pas bloque ; si une action de deblocage vient d'etre tentee, elle a marche
     lastText = gameText; idleSince = Date.now();
-    if (unblockPending && Date.now() - unblockPending.at < 30000) {
+    // reussite seulement si l'ecran a vraiment change (autre signature) : un F5 qui recharge le meme ecran ne compte pas
+    if (unblockPending && Date.now() - unblockPending.at < 30000 && screenSig(page.url(), gameText) !== unblockPending.sig) {
       const U = (((S.learn ??= {}).unblock ??= {})[unblockPending.sig] ??= {})[unblockPending.act] ??= { ok: 0, ko: 0 };
       U.ok++; log(`DEBLOCAGE appris : "${unblockPending.sig}" -> ${unblockPending.act} (${U.ok}/${U.ok + U.ko})`);
       decide(`Deblocage : sur "${unblockPending.sig}", l'action "${unblockPending.act}" a marche, je la retiens`);
