@@ -618,6 +618,7 @@ async function gate() {
     if (e != null && e <= CFG.energyReserve) S.recharging = true;
     if (S.recharging && (e == null || e >= resume)) S.recharging = false;
     if (!off && !capped && S.recharging && e >= 2 && S.boss?.eta && Date.now() > S.boss.eta + 5000) return; // la boucle ne fait que le boss pendant la recharge
+    if (!off && !capped && S.recharging && canBuyEnergy()) return; // la boucle retente l'achat (reglage active ou kamas revenus)
     if (!off && !capped && !S.recharging) { S.resumeAt = null; if (said) decide(`Reprise : ${said === 'nrj' ? `energie a ${e}` : 'dans la plage horaire et sous le plafond'}`); return; }
     if (off) {
       const wait = ((CFG.activeFrom - mins + 1440) % 1440) * 60000;
@@ -634,6 +635,8 @@ async function gate() {
     await sleep(15000);
   }
 }
+// achat retente au plus toutes les 5 min pendant une recharge ; ponytail: prix 300 K le point en dur ici, buyEnergy relit le vrai prix
+const canBuyEnergy = () => CFG.energyBuy && S.kamas - 3000 >= CFG.kamasReserve && Date.now() - (S.last.energie ?? 0) > 300000;
 // a la reserve : lit l'energie exacte, et si CFG.energyBuy, achete +10 sans toucher a kamasReserve
 // max (bouton du tableau de bord) : le plein, autant que les kamas le permettent
 async function buyEnergy(page, max = false) {
@@ -793,7 +796,7 @@ while (true) {
     }
     autoClicked = false; idleSince = Date.now();
     if (/Plus assez d.énergie/.test(text) && text !== energyText) { energyText = text; setEnergy(0); }
-    if (!S.recharging && energyNow() != null && energyNow() <= CFG.energyReserve) { await safe('energie', buyEnergy(page)); S.last.energie = Date.now(); await page.goto(COMBAT); } // gate() passe en recharge si rien n'a ete achete
+    if (energyNow() != null && energyNow() <= CFG.energyReserve && (!S.recharging || canBuyEnergy())) { await safe('energie', buyEnergy(page)); S.last.energie = Date.now(); await page.goto(COMBAT); } // gate() passe en recharge si rien n'a ete achete
     await gate(); // plage horaire + plafond de combats/heure, avant de lancer quoi que ce soit
     idleSince = Date.now();
 
