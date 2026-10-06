@@ -1258,7 +1258,7 @@ await managePass(page);
 let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastText = '', combats = 0;
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
-let clickFails = []; // clics expires recents (fenetre inconnue)
+let clickFails = [], myWaitSince = 0; // clics expires recents (fenetre inconnue) ; debut d'un "Tour de moi..." fige
 // XP hard (bouton) : plus gros groupes, palier suivant a chaque victoire, 1re defaite -> un cran plus bas puis montee normale
 // Deblocage appris (S.learn.unblock[signature][action] = { ok, ko }) : page figee 30 s -> une action sure a la fois, la meilleure connue d'abord.
 // Jamais : achats/ventes/brisage, fuite, deconnexion, guilde, reinitialisation, Discord, test de presence (traite avant).
@@ -1315,8 +1315,15 @@ while (true) {
   if (S.queue[0] === 'f5') { S.queue.shift(); log('ACTION f5 (tableau de bord)'); await page.goto(COMBAT); idleSince = Date.now(); continue; }
   if (S.paused) { S.status = 'pause'; await sleep(1000); idleSince = Date.now(); continue; }
   const text = await page.locator('body').innerText().catch(() => '');
-  if (text !== lastText) { // la page bouge = pas bloque ; si une action de deblocage vient d'etre tentee, elle a marche
-    lastText = text; idleSince = Date.now();
+  // "bouge" = la zone de jeu (main) change ; le chat defile en permanence et masquait les pages figees
+  const gameText = await page.locator('main').innerText().catch(() => text);
+  // bug du site : "Tour de <moi>..." (attente serveur, "- PA") qui ne rend jamais la main -> F5 apres 10 s
+  if (S.name && new RegExp(`Tour de ${S.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}…`).test(gameText)) {
+    myWaitSince ||= Date.now();
+    if (Date.now() - myWaitSince > 10000) { log('BUG site - "Tour de moi..." fige, F5'); decide('Bug du site : mon tour reste en attente serveur, je recharge'); myWaitSince = 0; await page.reload().catch(() => {}); idleSince = Date.now(); continue; }
+  } else myWaitSince = 0;
+  if (gameText !== lastText) { // la page bouge = pas bloque ; si une action de deblocage vient d'etre tentee, elle a marche
+    lastText = gameText; idleSince = Date.now();
     if (unblockPending && Date.now() - unblockPending.at < 30000) {
       const U = (((S.learn ??= {}).unblock ??= {})[unblockPending.sig] ??= {})[unblockPending.act] ??= { ok: 0, ko: 0 };
       U.ok++; log(`DEBLOCAGE appris : "${unblockPending.sig}" -> ${unblockPending.act} (${U.ok}/${U.ok + U.ko})`);
