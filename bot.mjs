@@ -4,6 +4,7 @@ import { exec } from 'node:child_process';
 import http from 'node:http';
 
 const BASE = 'https://dofusmasters.houk.fr', COMBAT = BASE + '/combat';
+const rand = (a, b) => a + Math.random() * Math.max(0, b - a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Etat live (lu par le tableau de bord) + reglages modifiables depuis le tableau de bord (config.json)
@@ -17,7 +18,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMin: [2, 0, 9], breakMax: [8, 0, 9], loseRate: [0.05, 0, 0.5], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -301,7 +302,9 @@ async function optimizeRings(page, main) {
     const slotBtn = main.locator('button', { hasText: new RegExp(`Anneau ${slot}\\)?\\s*$`) }).first();
     if (!(await slotBtn.isVisible().catch(() => false))) {
       const equips = await main.locator('button', { hasText: /^Équiper/ }).allInnerTexts().catch(() => []);
-      decide(`Anneaux : bouton de l'emplacement ${slot} introuvable (boutons : ${equips.map((t) => t.replace(/\s+/g, ' ')).join(' | ') || 'aucun'}), j'arrete la`);
+      decide(new RegExp(`Anneau ${other}\\)`).test(offered)
+        ? `Anneaux : emplacement ${slot} verrouille, et rien au sac ne bat l'anneau remplacable (${slot === 1 ? n2 : n1})`
+        : `Anneaux : bouton de l'emplacement ${slot} introuvable (boutons : ${equips.map((t) => t.replace(/\s+/g, ' ')).join(' | ') || 'aucun'}), j'arrete la`);
       break;
     }
     await slotBtn.click();
@@ -576,6 +579,7 @@ async function playTurn(page) {
       await main.locator('button').filter({ has: page.locator('[aria-label="Résistances"]') }).nth(mv.focus.i).click();
       await sleep(400);
     }
+    await sleep(rand(CFG.thinkMin, CFG.thinkMax)); // temps de reflexion
     const before = st;
     await page.locator('div.fixed button').filter({ hasText: mv.card.name }).first().click();
     let after = before;
@@ -1066,6 +1070,7 @@ await managePass(page);
 let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastText = '', combats = 0;
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
+let paced = false, throwChecked = false; // rythme : ecart deja fait sur cet ecran de fin ; abandon deja tire pour ce combat
 let trainLeft = 0, trainZone = null, climbStreak = 0, climbDir = 0, climbHist = [], lastLevel = 0; // entrainement demande depuis le tableau de bord
 let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
@@ -1133,6 +1138,7 @@ while (true) {
   if (/Victoire !|Défaite/.test(text) && !/À toi de jouer/.test(text) && (fight || await endBtn.first().isVisible().catch(() => false))) { // boss/arene : ecran de fin peut-etre sans bouton connu
     if (!endHandled) {
     endHandled = true;
+    paced = false; throwChecked = false;
     if (++combats % CFG.passEvery === 0) deckDue = true;
     const win = /Victoire !/.test(text) && !/Défaite/.test(text);
     const num = (s) => s.replace(/\D/g, '');
@@ -1203,6 +1209,17 @@ while (true) {
     autoClicked = false; idleSince = Date.now();
     if (/Plus assez d.énergie/.test(text) && text !== energyText) { energyText = text; setEnergy(0); }
     if (energyNow() != null && energyNow() <= CFG.energyReserve && (!S.recharging || canBuyEnergy())) { await safe('energie', buyEnergy(page)); S.last.energie = Date.now(); await page.goto(COMBAT); } // gate() passe en recharge si rien n'a ete achete
+    if (!paced) { // une fois par ecran de fin : ecart aleatoire, parfois une vraie pause (< 10 min, sinon la place est liberee)
+      paced = true;
+      if (Math.random() < CFG.breakChance) {
+        const ms = rand(CFG.breakMin, CFG.breakMax) * 60000;
+        S.status = 'repos'; S.resumeAt = Date.now() + ms;
+        decide(`Pause aleatoire de ${Math.round(ms / 60000)} min`); log(`PAUSE aleatoire ${Math.round(ms / 60000)} min`);
+        await sleep(ms);
+        S.resumeAt = null;
+      }
+      await sleep(rand(CFG.gapMin, CFG.gapMax) * 1000);
+    }
     await gate(); // plage horaire + plafond de combats/heure, avant de lancer quoi que ce soit
     idleSince = Date.now();
 
@@ -1293,6 +1310,22 @@ while (true) {
 
   const auto = page.getByRole('button', { name: 'Auto', exact: true });
   if (!autoClicked && /À toi de jouer/.test(text) && await auto.isEnabled().catch(() => false)) {
+    // defaites volontaires (loseRate) : chasse seulement, tire une fois au tour 1, exclues du taux de victoire et de l'apprentissage
+    if (!throwChecked && !fight && S.mode === 'chasse' && +(text.match(/Tour (\d+)/)?.[1] ?? 0) === 1) {
+      throwChecked = true;
+      if (Math.random() < CFG.loseRate) {
+        await sleep(rand(CFG.thinkMin, CFG.thinkMax));
+        await page.getByRole('button', { name: 'Fuir', exact: true }).click().catch(() => {});
+        const ok = page.getByRole('button', { name: /^(Confirmer|Oui|Abandonner|Fuir)/ }).last();
+        if (await ok.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await ok.click().catch(() => {});
+        fight = 'abandon';
+        decide(`Defaite volontaire (${Math.round(CFG.loseRate * 100)} % des combats) : je fuis ce combat`);
+        log('ABANDON volontaire - fuite');
+        idleSince = Date.now();
+        await sleep(2000);
+        continue;
+      }
+    }
     if (CFG.manualFight && (await safe('combat', playTurn(page))) === true) idleSince = Date.now(); // tour joue ; le suivant reviendra ici
     else {
       if (CFG.manualFight) { log('COMBAT manuel en echec - passe en Auto pour ce combat'); fightMem.profile = null; }
