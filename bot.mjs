@@ -170,7 +170,7 @@ const ADV_FIGHT = /^(Combattre|Affronter le boss)/;
 const SELLABLE = ['Chapeau', 'Cape', 'Amulette', 'Ceinture', 'Bottes', 'Arme', 'Bouclier'];
 const SELL_RARITY = new Set(['COMMUN', 'PEU COMMUN']); // RARE et au-dessus : jamais vendus
 // vente prudente, dans le doute on garde : favori, rarete RARE+, tiers fusionne ou Rayonnant, liste NEVER_SELL, comparaison incomplete
-const NEVER_SELL = ['Gelano']; // noms de base (sans tiers) des objets rares a garder quoi qu'il arrive
+const NEVER_SELL = ['Gelano', 'Mollosk']; // Mollosk : objet garde au prestige // noms de base (sans tiers) des objets rares a garder quoi qu'il arrive
 const canSell = (d) => !d.fav && SELL_RARITY.has(d.rarity) && !/ · (Tiers \d+|Rayonnant)$/.test(d.name) && !NEVER_SELL.includes(baseName(d.name)) && !d.partial;
 // panneau de detail : "Nom / RARETE / Emplacement / Niveau N / stats / Exemplaires..." ; on prend la derniere occurrence (la grille au-dessus contient des badges)
 const parseDetail = (t) => {
@@ -939,6 +939,7 @@ async function managePass(page) {
   await safe('hdv', hdvBuy(page));
   await safe('carac', allocateStats(page));
   for (const k of ['coffres', 'deck', 'inventaire', 'hdv', 'carac']) S.last[k] = Date.now();
+  if (!ZONES) await safe('zones', allZones(page)); // niveaux des zones pour le garde-fou (une fois par lancement)
   await page.goto(COMBAT);
 }
 
@@ -976,7 +977,7 @@ await managePass(page);
 let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastText = '', combats = 0;
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
-let trainLeft = 0, trainZone = null, climbStreak = 0, climbDir = 0; // entrainement demande depuis le tableau de bord
+let trainLeft = 0, trainZone = null, climbStreak = 0, climbDir = 0, lastLevel = 0; // entrainement demande depuis le tableau de bord
 let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
@@ -998,6 +999,15 @@ while (true) {
   const text = await page.locator('body').innerText().catch(() => '');
   if (text !== lastText) { lastText = text; idleSince = Date.now(); } // la page bouge = pas bloque
   readHeader(text);
+  // prestige (retour niveau 1, sorts et inventaire perdus) : on oublie zone, compteurs et anneaux, passe de gestion, aventure depuis le debut
+  if (lastLevel && S.level && S.level < lastLevel - 5) {
+    log(`PRESTIGE detecte (niveau ${lastLevel} -> ${S.level}) - zone, compteurs et anneaux remis a zero`);
+    decide(`Prestige : niveau ${lastLevel} -> ${S.level}. Je repars de zero : zone de mon niveau, deck et stats relus, aventure depuis le debut`);
+    zone = null; trainZone = null; trainLeft = 0; results = []; strikes = 0; winsSinceStrike = 0; climbStreak = 0; climbDir = 0;
+    huntLeft = 0; backToAdventure = false; deckDue = true; S.rings = {}; S.stats = null;
+    if (!S.queue.includes('aventure')) S.queue.push('aventure');
+  }
+  if (S.level) lastLevel = S.level;
   Object.assign(S, { huntLeft, zone, strikes, status: 'combat' });
 
   // rate-limit de l'hebergeur (o2switch) : on respecte, pause 5 min
@@ -1028,7 +1038,9 @@ while (true) {
     spendEnergy(fight === 'boss' || fight === 'arene' ? 2 : 1);
     log(`${fight ? fight.toUpperCase() + ' ' : ''}${win ? 'VICTOIRE' : 'DEFAITE'} ${g ? `+${num(g[1])} XP +${num(g[2])} kamas` : 'gains=0'}`);
     const zl = await page.getByRole('link', { name: 'Autres groupes de la zone' }).getAttribute('href', { timeout: 1000 }).catch(() => null);
-    if (zl?.startsWith('/chasse?zone=')) zone = zl;
+    // garde-fou : jamais une zone plus de 20 niveaux au-dessus de moi hors entrainement (ex. apres un prestige)
+    const zlMax = ZONES?.find(([zh]) => zh === zl)?.[1];
+    if (zl?.startsWith('/chasse?zone=') && (fight === 'entrainement' || !zlMax || zlMax <= S.level + 20)) zone = zl;
     // aventure perdue : deck revu + XP en chasse avant de retenter
     // ponytail: 40 victoires fixe ; a rendre progressif si l'etape bloque encore apres
     if (adventure && !win) { decide(`Aventure perdue : deck revu, puis ${CFG.huntWins} victoires en chasse avant de retenter`); huntLeft = CFG.huntWins; deckDue = true; log('AVENTURE bloquee - deck revu, ' + CFG.huntWins + ' victoires en chasse puis retente'); }
