@@ -1330,7 +1330,7 @@ async function goAdventure(page) {
   log('AVENTURE - etape lancee');
   return true;
 }
-let clickFails = [], myWaitSince = 0, satStreak = 0, inQueue = false; // clics expires recents (fenetre inconnue) ; debut d'un "Tour de moi..." fige
+let clickFails = [], myWaitSince = 0, satStreak = 0, inQueue = false, chatDeadSince = 0; // clics expires recents (fenetre inconnue) ; debut d'un "Tour de moi..." fige
 // XP hard (bouton) : plus gros groupes, palier suivant a chaque victoire, 1re defaite -> un cran plus bas puis montee normale
 // Deblocage appris (S.learn.unblock[signature][action] = { ok, ko }) : page figee 30 s -> une action sure a la fois, la meilleure connue d'abord.
 // Jamais : achats/ventes/brisage, fuite, deconnexion, guilde, reinitialisation, Discord, test de presence (traite avant).
@@ -1389,6 +1389,12 @@ while (true) {
   const text = await page.locator('body').innerText().catch(() => '');
   // "bouge" = la zone de jeu (main) change ; le chat defile en permanence et masquait les pages figees
   const gameText = await page.locator('main').innerText().catch(() => text);
+  // bug du site : le chat n'affiche plus personne en ligne (connexion temps reel perdue) -> F5 apres 10 s ; jamais en file d'attente
+  const online = text.match(/(\d+)\s+en ligne/)?.[1];
+  if (/\bChat\b/.test(text) && (online == null || +online === 0) && !/File d.attente|Le serveur est plein/i.test(text)) {
+    chatDeadSince ||= Date.now();
+    if (Date.now() - chatDeadSince > 10000) { log('BUG site - chat deconnecte (personne en ligne), F5'); decide('Bug du site : le chat ne montre personne en ligne, connexion perdue, je recharge'); chatDeadSince = 0; await page.reload().catch(() => {}); idleSince = Date.now(); continue; }
+  } else chatDeadSince = 0;
   // bug du site : "Tour de <moi>..." (attente serveur, "- PA") qui ne rend jamais la main -> F5 apres 10 s
   if (S.name && new RegExp(`Tour de ${S.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}…`).test(gameText)) {
     myWaitSince ||= Date.now();
