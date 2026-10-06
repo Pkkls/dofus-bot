@@ -1336,9 +1336,10 @@ async function managePass(page) {
   await step('coffres', openChests(page));
   await step('deck', optimizeDeck(page));
   await step('inventaire', equipFromInventory(page));
-  if ((await step('hdv', hdvBuy(page))) > 0) await step('inventaire', equipFromInventory(page)); // equipe les achats tout de suite
+  if (!S.emptySlots?.length && Date.now() - (S.last.hdv ?? 0) < 3600000) T.hdv = 0; // HDV : ~40 s pour rarement mieux, 1 fois par heure sauf emplacement vide
+  else { S.last.hdv = Date.now(); if ((await step('hdv', hdvBuy(page))) > 0) await step('inventaire', equipFromInventory(page)); } // equipe les achats tout de suite
   await step('carac', allocateStats(page));
-  for (const k of ['coffres', 'deck', 'inventaire', 'hdv', 'carac']) S.last[k] = Date.now();
+  for (const k of ['coffres', 'deck', 'inventaire', 'carac']) S.last[k] = Date.now();
   if (!ZONES) await safe('zones', allZones(page)); // niveaux des zones pour le garde-fou (une fois par lancement)
   if (!S.last.forge) await safe('forge', visitForge(page)); // 1re visite : Bouclier de forge offert
   else await step('forge', forgeUpgrade(page));
