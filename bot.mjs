@@ -1389,7 +1389,8 @@ async function runActions(page) {
     try { r = a === 'gestion' ? await managePass(page) : await ACTIONS[a](page); } catch (e) { err = e.message.split('\n')[0]; log(`ERREUR action ${a} : ${err}`); }
     if (r === true && (a === 'boss' || a === 'arene')) { fight = a; if (a === 'boss') lastBoss = Date.now(); }
     started = r === true && ['boss', 'arene', 'zone', 'aventure'].includes(a);
-    (S.actRes ??= {})[a] = { t: Date.now(), r: err ? 'echec' : started ? 'combat lance' : r === false ? 'rien a faire' : 'fait', err };
+    const planned = ['spots', 'xphard', 'entrainement', 'site'].includes(a); // actions qui programment une tache plutot que lancer un combat
+    (S.actRes ??= {})[a] = { t: Date.now(), r: err ? 'echec' : started ? 'combat lance' : planned ? 'programme' : r === false ? 'rien a faire' : 'fait', err };
   }
   return started;
 }
