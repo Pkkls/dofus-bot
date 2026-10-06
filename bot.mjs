@@ -92,6 +92,7 @@ let ELEM_SHARE = { Neutre: 0.2, Terre: 0.2, Feu: 0.2, Eau: 0.2, Air: 0.2 };
 const STAT_ELEM = { Force: ['Terre', 'Neutre'], Intelligence: ['Feu'], Chance: ['Eau'], Agilité: ['Air'] };
 const weight = (stat, pct) => {
   if (STAT_ELEM[stat]) return 0.2 + 1.5 * STAT_ELEM[stat].reduce((s, e) => s + ELEM_SHARE[e], 0);
+  if (stat === 'Vitalité' && typeof vitShareNow === 'function') return Math.min(3, Math.max(0.5, vitShareNow() / Math.max(0.05, CFG.vitShare))); // meme besoin que les caracs
   const de = stat.match(/^Dommages (Neutre|Terre|Feu|Eau|Air)$/);
   if (de) return 0.5 + 5 * ELEM_SHARE[de[1]];
   return WEIGHTS[stat] ?? (/^Dommages /.test(stat) ? 1 : /^Résistance /.test(stat) ? (pct ? 2 : 0.5) : 0.2);
