@@ -271,7 +271,7 @@ async function equipFromInventory(page) {
       // plusieurs emplacements (trophees) : un bouton "Equiper a la place de X" par piece portee -> on remplace la plus faible connue, si on fait mieux
       const eq = main.getByRole('button', { name: /^Équiper/ });
       const labels = (await eq.allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
-      const targets = labels.map((l, k) => ({ k, name: l.match(/à la place de (.+)$/)?.[1], sc: S.ownScore?.[l.match(/à la place de (.+)$/)?.[1]] ?? 0 }));
+      const targets = labels.map((l, k) => { const name = l.match(/à la place de (.+?)(?: \([^)]*\))?$/)?.[1]; return { k, name, sc: S.ownScore?.[name] ?? 0 }; }); // "a la place de X (Dofus / Trophee 1)"
       const tgt = targets.length > 1 ? targets.sort((a, b) => a.sc - b.sc)[0] : targets[0];
       if (tgt && (targets.length === 1 || bd.own > tgt.sc + 5)) {
         await eq.nth(tgt.k).click();
