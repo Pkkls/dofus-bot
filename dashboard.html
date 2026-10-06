@@ -352,6 +352,28 @@ details[open].card > summary .chev { transform: rotate(180deg); }
     </section>
   </div>
 
+  <section class="group" aria-labelledby="g-goal">
+    <div class="group-h"><h2 id="g-goal">Objectif</h2><p>Feuille de route du mode rush prestige et descente des Abysses.</p></div>
+    <div class="bento">
+      <section class="card span-c2">
+        <h2 class="card-h"><svg class="i"><use href="#i-crown"/></svg>Feuille de route<span class="aside" id="r-goal"></span></h2>
+        <div class="card-b">
+          <div class="cards" id="r-steps"></div>
+          <div class="bar" role="progressbar" aria-label="Etape en cours" aria-valuemin="0" aria-valuemax="100" id="r-barWrap"><i id="r-bar"></i></div>
+          <div class="sub" id="r-now"></div>
+        </div>
+      </section>
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-flag"/></svg>Abysses<span class="aside" id="a-rec"></span></h2>
+        <div class="card-b">
+          <div class="notes" id="a-run"></div>
+          <div class="sub">Choix les plus payants (etage moyen atteint)</div>
+          <div class="cards" id="a-picks"></div>
+        </div>
+      </section>
+    </div>
+  </section>
+
   <section class="group" aria-labelledby="g-ai">
     <div class="group-h"><h2 id="g-ai">Intelligence du bot</h2><p>Ce que le moteur mesure, apprend et applique tout seul.</p></div>
     <div class="bento">
@@ -774,6 +796,25 @@ function render(d) {
   $('m-inbox').textContent = IB.length ? IB.slice(0, 3).map((e) => `${hm(Date.parse(e.t))} ${e.type}`).join(' | ') : 'rien a traiter';
   const W = L.wisLog ?? [];
   $('m-wis').textContent = W.length ? W.slice(0, 4).map((w) => `niv ${w.lvl} : ${w.sag}${w.add ? ' (+' + w.add + ')' : ''}, ${short(w.xpf)} XP/victoire, defaites ${w.loss == null ? '?' : pct(w.loss)}`).join(' | ') : 'releve a la prochaine repartition';
+  // feuille de route : niveau 200 puis prestige, Ascension etage 20 avant le prestige 4
+  const P = S.prestige ?? 0, goal = state?.CFG?.rushPrestige ?? 0, steps = [];
+  for (let p = P; p < goal; p++) {
+    steps.push({ t: `Niveau 200 (prestige ${p})`, done: p === P && S.level >= 200, prog: p === P ? (S.level ?? 0) / 200 : 0, txt: p === P ? `niv. ${S.level ?? '?'} / 200` : '' });
+    if (p + 1 === 4) steps.push({ t: 'Ascension etage 20', done: p === P && (S.ascBest ?? 0) >= 20, prog: p === P ? (S.ascBest ?? 0) / 20 : 0, txt: p === P && S.level >= 200 ? `etage ${S.ascBest ?? 0} / 20` : '' });
+    steps.push({ t: `Prestige ${p + 1}`, done: false, prog: 0, txt: '' });
+  }
+  const cur = steps.findIndex((x) => !x.done);
+  $('r-goal').textContent = goal > P ? `prestige ${P} vers ${goal}` : goal ? 'objectif atteint' : 'mode coupe';
+  $('r-steps').innerHTML = steps.map((x, i) => `<div class="cardx"><span class="cost">${i + 1}</span><span class="n">${esc(x.t)}</span><span class="m num">${x.done ? 'fait' : i === cur ? (x.txt || 'en cours') : 'a venir'}</span></div>`).join('') || '<div class="empty">Regle "Rush prestige" sur le prestige vise pour lancer le mode.</div>';
+  const cp = cur >= 0 ? Math.round(steps[cur].prog * 100) : 0;
+  $('r-bar').style.width = cp + '%'; $('r-barWrap').setAttribute('aria-valuenow', cp);
+  $('r-now').textContent = cur >= 0 ? `Etape en cours : ${steps[cur].t} (${cp} %)` : '';
+  // abysses : record, descente en cours, choix appris
+  const AR = S.abyssRun, rec = Math.max(L.abyssBest ?? 0, AR?.floors ?? 0);
+  $('a-rec').textContent = rec ? `record ${rec}` : '';
+  $('a-run').innerHTML = AR ? `<div>Descente en cours : <b>etage ${AR.floor ?? (AR.floors ?? 0) + 1}</b>, ${AR.floors ?? 0} franchis${goal > P && S.level < 200 ? ' (en pause : rush XP)' : ''}</div>` : '<div>Aucune descente en cours</div>';
+  const picks = Object.entries(L.abyssPicks ?? {}).filter(([, p]) => p.n).sort((a, b) => b[1].floors / b[1].n - a[1].floors / a[1].n).slice(0, 5);
+  $('a-picks').innerHTML = picks.map(([k, p]) => `<div class="cardx"><span class="n">${esc(k)}</span><span class="m num">${(p.floors / p.n).toFixed(1).replace('.', ',')} · ${p.n} descente${p.n > 1 ? 's' : ''}</span></div>`).join('') || '<div class="empty">Appris a la fin de chaque descente.</div>';
   const bs = L.bestSpot;
   $('sp-best').textContent = bs ? `actuel : ${bs.name}` : '';
   const spots = Object.entries(L.zones ?? {}).filter(([, z]) => z.n >= 3).sort((a, z) => z[1].xpm - a[1].xpm).slice(0, 8);
