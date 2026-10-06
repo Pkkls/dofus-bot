@@ -17,7 +17,7 @@ const decide = (m) => {
   else { S.decisions.unshift({ t: Date.now(), m, n: 1 }); S.decisions.length = Math.min(S.decisions.length, 60); }
   push();
 };
-const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
+const CFG_SPEC = { rushPrestige: [0, 0, 10], vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
   scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMinSec: [90, 0, 570], breakMaxSec: [480, 0, 570], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], abyssDaily: [1, 0, 1], hardEvery: [10, 0, 200], wisShare: [0.3, 0, 1], stuckSec: [15, 5, 120], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
@@ -97,7 +97,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['rushAsc', 'ascBest', 'seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -1115,7 +1115,7 @@ const parseLog = () => {
 // en-tete du jeu : "Nom", puis "Niv. 72 · 26 690 K"
 const readHeader = (text) => {
   const hd = text.match(/([^\n]+)\nNiv\. (\d+) · ([\d\s]+) K/);
-  if (hd) Object.assign(S, { name: hd[1].trim(), level: +hd[2], kamas: +hd[3].replace(/\D/g, '') });
+  if (hd) Object.assign(S, { name: hd[1].trim(), level: +hd[2], kamas: +hd[3].replace(/\D/g, ''), prestige: +(hd[1].match(/✦\s*(\d+)/)?.[1] ?? 0) });
   if (hd && S.level !== S.levelHist?.at(-1)?.lvl) { (S.levelHist ??= []).push({ t: Date.now(), lvl: S.level }); if (S.levelHist.length > 400) S.levelHist.shift(); } // progression
 };
 function startDashboard(page) {
@@ -1195,7 +1195,7 @@ async function gate() {
   }
 }
 // achat retente au plus toutes les 5 min pendant une recharge ; ponytail: prix 300 K le point en dur ici, buyEnergy relit le vrai prix
-const canBuyEnergy = () => CFG.energyBuy && (S.kamas - 3000 >= CFG.energyKamas || Date.now() - (S.last.venteEnergie ?? 0) > 1800000) && Date.now() - (S.last.energie ?? 0) > 300000;
+const canBuyEnergy = () => (CFG.energyBuy || rushing()) &&(S.kamas - 3000 >= CFG.energyKamas || Date.now() - (S.last.venteEnergie ?? 0) > 1800000) && Date.now() - (S.last.energie ?? 0) > 300000;
 // a la reserve : lit l'energie exacte, et si CFG.energyBuy, achete +10 sans toucher a energyKamas ; kamas trop justes : passe de vente d'abord (30 min mini entre deux)
 // max (bouton du tableau de bord) : le plein, autant que les kamas le permettent
 async function buyEnergy(page, max = false, sold = false) {
@@ -1217,7 +1217,7 @@ async function buyEnergy(page, max = false, sold = false) {
     return;
   }
   if (!j || j.e > CFG.energyReserve) return;
-  if (!CFG.energyBuy) { decide(`Energie ${j.e}/${j.max} : achat coupe (reglage), j'attends la recharge`); return; }
+  if (!CFG.energyBuy && !rushing()) { decide(`Energie ${j.e}/${j.max} : achat coupe (reglage), j'attends la recharge`); return; }
   if (j.left >= 10 && S.kamas - 10 * j.price < CFG.energyKamas && !sold && Date.now() - (S.last.venteEnergie ?? 0) > 1800000) {
     S.last.venteEnergie = Date.now();
     decide(`Energie ${j.e}/${j.max} : ${S.kamas} K, trop juste pour +10 (reserve ${CFG.energyKamas} K) : je vends les objets inutiles d'abord`);
@@ -1508,6 +1508,48 @@ async function abyssChoice(page, text) {
   if (await next.isEnabled().catch(() => false)) { const lbl = (await next.innerText().catch(() => '')).trim(); await next.click().catch(() => {}); log(`ABYSSES ${lbl}`); decide(`Abysses : ${lbl}`); return true; }
   return false;
 }
+// Mode rush prestige (CFG.rushPrestige = prestige vise) : avant le 200, tout pour l'XP (ni abysses ni arene, energie achetee) ;
+// au 200, prestige des que la page le permet, sinon la condition lue (etage d'Ascension) est remplie d'abord. Ecrans captures : dump/prestige.txt, dump/ascension.txt
+const rushing = () => CFG.rushPrestige > (S.prestige ?? 0);
+let rushNext = 0;
+const controls = (loc) => loc.locator('button, a').evaluateAll((els) => els.map((e) => `${e.tagName}${e.disabled ? ' [off]' : ''} "${e.innerText.replace(/\s+/g, ' ').trim().slice(0, 80)}"`).join('\n')).catch(() => '');
+async function rushPrestige(page) {
+  const main = page.locator('main');
+  if (!S.rushAsc || (S.ascBest ?? 0) >= S.rushAsc) { // condition inconnue ou remplie : page Personnage (bouton Prestige)
+    await page.goto(BASE + '/personnage');
+    await main.getByText(/Prestige/).first().waitFor({ timeout: 20000 });
+    const t = await main.innerText();
+    writeFileSync('dump/prestige.txt', `${t}\n\n=== BOUTONS\n${await controls(main)}`);
+    const btn = main.locator('button:enabled').filter({ hasText: /Prestige/i }).filter({ hasNotText: /Voir|Classement/i }).first();
+    if (await btn.isVisible().catch(() => false)) {
+      page.once('dialog', (dg) => { log(`PRESTIGE dialogue : ${dg.message().slice(0, 150)}`); dg.accept().catch(() => {}); });
+      const lbl = (await btn.innerText()).replace(/\s+/g, ' ').trim();
+      await btn.click(); await sleep(1500);
+      const ok = page.getByRole('button', { name: /^(Confirmer|Oui|Valider|Faire|Je confirme)/i }).first(); // confirmation eventuelle
+      if (await ok.isVisible().catch(() => false)) await ok.click().catch(() => {});
+      log(`PRESTIGE lance (${lbl}) : prestige ${S.prestige} -> ${S.prestige + 1}`); decide(`Rush prestige : niveau 200, je fais le prestige (${lbl})`);
+      S.rushAsc = 0; rushNext = Date.now() + 60000; return true;
+    }
+    const need = t.match(/[ée]tage (\d+)[^\n]{0,40}(?:pour|Prestige)/i)?.[1] ?? (S.prestige === 3 ? '20' : null); // P4 : etage 20 (texte de l'Ascension)
+    if (!need) { decide('Rush prestige : niveau 200 mais pas de bouton Prestige ni de condition lue, voir dump/prestige.txt ; nouvel essai dans 30 min'); log('PRESTIGE indisponible, condition illisible (dump/prestige.txt)'); rushNext = Date.now() + 1800000; return false; }
+    S.rushAsc = +need; decide(`Rush prestige : il faut l'etage ${need} de l'Ascension avant le prestige`);
+  }
+  if ((energyNow() ?? 0) < 2 + CFG.energyReserve) { decide('Rush prestige : energie trop basse pour l\'Ascension, j\'attends'); rushNext = Date.now() + 600000; return false; }
+  await page.goto(BASE + '/ascension');
+  await main.getByText(/ÉTAGE ACTUEL/i).first().waitFor({ timeout: 20000 }).catch(() => {});
+  const t = await main.innerText();
+  S.ascBest = +(t.match(/MEILLEUR ÉTAGE\s*\n\s*(\d+)/i)?.[1] ?? 0);
+  if (S.ascBest >= S.rushAsc) { rushNext = 0; return true; } // condition remplie : prestige au prochain tour
+  const go = main.locator('button:enabled, a').filter({ hasText: /^\s*(Combattre|Affronter|Défier|Tenter|Lancer|Entrer|Monter)/i }).first();
+  if (!(await go.isVisible().catch(() => false))) {
+    writeFileSync('dump/ascension.txt', `${t}\n\n=== BOUTONS\n${await controls(main)}`);
+    decide('Rush prestige : bouton de combat d\'Ascension introuvable, voir dump/ascension.txt ; nouvel essai dans 30 min'); log('ASCENSION bouton introuvable (dump/ascension.txt)');
+    rushNext = Date.now() + 1800000; return false;
+  }
+  const floor = t.match(/ÉTAGE ACTUEL\s*\n\s*(\d+)/i)?.[1] ?? '?';
+  await go.click(); log(`ASCENSION etage ${floor} (meilleur ${S.ascBest}, objectif ${S.rushAsc})`); decide(`Rush prestige : Ascension etage ${floor}, objectif ${S.rushAsc}`);
+  return true;
+}
 // Actions du tableau de bord : executees des que le bot n'est pas en plein combat ; resultat garde par bouton (S.actRes)
 async function runActions(page) {
   let started = false;
@@ -1534,7 +1576,7 @@ let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
-  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: (p) => { S.hdvBrokenUntil = 0; return hdvBuy(p); }, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, abysses: startAbyss, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
+  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: (p) => { S.hdvBrokenUntil = 0; return hdvBuy(p); }, prestige: (p) => { rushNext = 0; return rushPrestige(p); }, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, abysses: startAbyss, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
   aventure: async (p) => { huntLeft = 0; S.advBlockedUntil = 0; xpHard = false; S.xpHard = false; return goAdventure(p); }, // l'aventure reste ensuite prioritaire (wantAdventure)
 };
@@ -1792,7 +1834,7 @@ while (true) {
     }
     if (S.recharging) { if (page.url() !== COMBAT) await page.goto(COMBAT); await sleep(1000); continue; } // recharge : rien d'autre que le boss, attente sur l'ecran de fin
     // arene toutes les CFG.arenaEvery minutes, si assez d'energie et un adversaire plus faible
-    if (CFG.arenaEvery > 0 && Date.now() - lastArena > CFG.arenaEvery * 60000) {
+    if (CFG.arenaEvery > 0 && !rushing() && Date.now() - lastArena > CFG.arenaEvery * 60000) {
       lastArena = S.last.arene = Date.now();
       if ((await safe('arene', fightArena(page))) === true) { fight = 'arene'; continue; }
     }
@@ -1837,7 +1879,7 @@ while (true) {
       decide(`XP hard automatique : ${S.learn?.hard?.n ? `${S.level - S.learn.hard.lvl} niveaux depuis la derniere mesure` : 'limite jamais mesuree'}, je recherche ma limite`);
       log('XP HARD demarre (auto)');
     }
-    if (CFG.abyssDaily && CFG.manualFight && !xpHard && new Date(S.last.abysses ?? 0).toDateString() !== new Date().toDateString() && (energyNow() ?? 0) >= 20 + CFG.energyReserve && !S.queue.includes('abysses')) {
+    if (CFG.abyssDaily && !rushing() && CFG.manualFight && !xpHard && new Date(S.last.abysses ?? 0).toDateString() !== new Date().toDateString() && (energyNow() ?? 0) >= 20 + CFG.energyReserve && !S.queue.includes('abysses')) {
       S.queue.push('abysses'); decide('Abysses : descente du jour programmee');
     }
     if (siteScanDue) { siteScanDue = S.siteScanPending = false; await safe('site', siteScan(page)); await page.goto(COMBAT).catch(() => {}); continue; }
@@ -1869,6 +1911,8 @@ while (true) {
     } else if (S.abyssRun && Date.now() - S.abyssRun.start < 3 * 3600000 && !/\/abysses/.test(page.url())) { // descente en cours : on la continue
       decide(`Abysses : descente en cours (etage ${S.abyssRun.floor ?? '?'}), j'y retourne`);
       await page.goto(BASE + '/abysses').catch(() => {});
+    } else if (rushing() && S.level >= 200 && Date.now() > rushNext) { // rush prestige : niveau max, l'XP ne sert plus
+      await safe('prestige', rushPrestige(page));
     } else if (CFG.manualFight && wantAdventure() && (await goAdventure(page))) {
       // aventure prioritaire : etape lancee
     } else if (CFG.manualFight && zone) {
