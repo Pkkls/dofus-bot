@@ -1512,7 +1512,7 @@ async function abyssChoice(page, text) {
     if (await ok.isVisible().catch(() => false)) await ok.click().catch(() => {});
     return true;
   }
-  const next = page.locator('main').locator('button, a').filter({ hasText: /^\s*(Combattre l.étage \d+|Étage suivant|Continuer la descente|Reprendre la descente|Plonger)/i }).first(); // bouton reel : "Combattre l'etage N" (jamais "Abandonner")
+  const next = page.locator('main').locator('button, a').filter({ hasText: /^\s*((Combattre|Affronter)\b.*étage \d+|Étage suivant|Continuer la descente|Reprendre la descente|Plonger)/i }).first(); // bouton reel : "Combattre l'etage N" (jamais "Abandonner")
   if (await next.isEnabled().catch(() => false)) { const lbl = (await next.innerText().catch(() => '')).trim(); await next.click().catch(() => {}); log(`ABYSSES ${lbl}`); decide(`Abysses : ${lbl}`); return true; }
   return false;
 }
