@@ -226,6 +226,12 @@ async function equipFromInventory(page) {
   const main = page.locator('main');
   const cb = main.locator('input[type=checkbox]').first();
   if (!(await cb.isChecked())) await cb.check();
+  if (!existsSync('dump/inv_new.txt')) { // interface changeante : page + fiche du 1er objet + controles, pour recaler les lecteurs
+    const first = invItems(main).first();
+    const n0 = await invItems(main).count();
+    if (n0) { await first.click().catch(() => {}); await sleep(1500); }
+    writeFileSync('dump/inv_new.txt', `objets reconnus : ${n0}\n${await main.innerText().catch(() => '')}\n\n=== CONTROLES\n${await main.locator('button, input, select, a').evaluateAll((els) => els.map((e) => `${e.tagName}${e.type ? '[' + e.type + ']' : ''}${e.disabled ? ' [off]' : ''} "${(e.innerText || e.value || e.placeholder || '').replace(/\s+/g, ' ').slice(0, 90)}" ${e.querySelector?.('img')?.alt ?? ''}`).join('\n')).catch(() => '')}`);
+  }
   S.emptySlots = (await main.locator('button').allInnerTexts()).map((s) => s.replace(/\s+/g, ' ').trim()).filter((s) => s.startsWith('+ ')).map((s) => s.slice(2)); // ex. "+ Bouclier"
   for (const slot of SLOTS) {
     const filter = main.locator('button').filter({ hasText: new RegExp(`^${slot}\\s*\\d+$`) });
