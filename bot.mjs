@@ -601,6 +601,18 @@ async function playTurn(page) {
     fightMem.stall = true;
     decide(`Pat detecte au tour ${st.turn} (PV ennemis ${Math.round(ehpNow)}, il y a 4 tours ${Math.round(hist[hist.length - 5])}) : je passe tout aux degats concentres`);
     log(`COMBAT pat tour ${st.turn} - style anti-pat`);
+    fightMem.stallTurn = st.turn; fightMem.stallEhp = ehpNow;
+  }
+  // dernier recours : 10 tours d'anti-pat sans entamer l'adversaire (il se soigne plus vite qu'on ne tape) -> fuite
+  if (fightMem.stall && st.turn - fightMem.stallTurn >= 10 && ehpNow > 0.9 * fightMem.stallEhp) {
+    decide(`Pat sans issue : 10 tours d'anti-pat et l'adversaire est toujours a ${Math.round(ehpNow)} PV, je fuis pour ne plus perdre de temps`);
+    log(`COMBAT pat sans issue tour ${st.turn} - fuite`);
+    page.once('dialog', (dg) => dg.accept().catch(() => {}));
+    await page.getByRole('button', { name: 'Fuir', exact: true }).click({ timeout: 5000 }).catch(() => {});
+    await sleep(1500);
+    const ok = page.getByRole('button', { name: /^(Confirmer|Oui|Abandonner)/ }).last();
+    if (await ok.isVisible().catch(() => false)) await ok.click().catch(() => {});
+    return true;
   }
   const P = fightMem.stall ? PROFILES.antipat : PROFILES[fightMem.profile];
   if (fightMem.incTurn !== st.turn) { // une seule estimation par tour, meme si le tour est joue en plusieurs appels
