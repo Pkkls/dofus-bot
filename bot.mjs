@@ -230,6 +230,9 @@ async function equipFromInventory(page) {
   for (const slot of SLOTS) {
     const filter = main.locator('button').filter({ hasText: new RegExp(`^${slot}\\s*\\d+$`) });
     if (!(await filter.count())) continue;
+    // rien de neuf depuis la derniere passe (meme nombre d'objets equipables, meme niveau) : on ne rouvre pas les 25 fiches
+    const cnt = `${S.level}:${(await filter.first().innerText()).replace(/\D/g, '')}`;
+    if ((S.invSeen ??= {})[slot] === cnt && !S.emptySlots?.some((e) => sameSlot(e, slot))) continue;
     await filter.first().click();
     await sleep(800);
     const items = invItems(main);
@@ -249,7 +252,8 @@ async function equipFromInventory(page) {
       decide(`Fusion ${slot} : 3 exemplaires au moins aussi bons que ma piece, tiers superieur (+10 % stats)`);
       fused++; i = -1; // la grille a change : on repart du debut
     }
-    if (slot === 'Anneau') { await optimizeRings(page, main); continue; } // 2 emplacements : logique dediee
+    const markSeen = async () => { S.invSeen[slot] = `${S.level}:${(await filter.first().innerText().catch(() => '')).replace(/\D/g, '')}`; }; // apres ventes/equipements
+    if (slot === 'Anneau') { await optimizeRings(page, main); await markSeen(); continue; } // 2 emplacements : logique dediee
     let best = 0, bestIdx = -1, bestName = '';
     const junk = [];
     const seen = [];
@@ -281,6 +285,7 @@ async function equipFromInventory(page) {
       }
     }
     await sellJunk(page, main, slot, junk);
+    await markSeen();
   }
 }
 
@@ -1619,7 +1624,7 @@ let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
-  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: (p) => { S.hdvBrokenUntil = 0; return hdvBuy(p); }, prestige: (p) => { rushNext = 0; return rushPrestige(p); }, hdvvente: hdvSell, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, abysses: startAbyss, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
+  coffres: openChests, deck: optimizeDeck, inventaire: (p) => { S.invSeen = {}; return equipFromInventory(p); }, hdv: (p) => { S.hdvBrokenUntil = 0; return hdvBuy(p); }, prestige: (p) => { rushNext = 0; return rushPrestige(p); }, hdvvente: hdvSell, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, abysses: startAbyss, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
   aventure: async (p) => { huntLeft = 0; S.advBlockedUntil = 0; xpHard = false; S.xpHard = false; return goAdventure(p); }, // l'aventure reste ensuite prioritaire (wantAdventure)
 };
