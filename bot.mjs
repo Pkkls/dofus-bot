@@ -650,7 +650,8 @@ async function playTurn(page) {
   decide(`Tour ${st.turn} manuel (${fightMem.profile}) : ${played.join(', ') || 'rien de rentable'} (reste ${st.paKnown ? st.pa : '?'} PA, PV ${st.hp}/${st.max}, degats ennemis estimes ${Math.round(fightMem.inc)})`);
   if (st.myTurn) { // toujours rendre la main, meme si la lecture des ennemis a rate
     fightMem.endHp = st.hp + st.shield;
-    await main.getByRole('button', { name: 'Fin du tour' }).click();
+    // delai court : bouton desactive pendant une animation -> la boucle principale recommencera, sans basculer le combat en Auto
+    if (!(await main.getByRole('button', { name: 'Fin du tour' }).click({ timeout: 6000 }).then(() => true, () => false))) decide(`Tour ${st.turn} : "Fin du tour" pas encore cliquable, je reessaie`);
   }
   return true;
 }
