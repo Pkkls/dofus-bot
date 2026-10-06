@@ -70,7 +70,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -1013,12 +1013,19 @@ const parseLog = () => {
   if (key === logCache.key) return logCache.data;
   const now = Date.now(), H = 3600000;
   const d = { wins: 0, losses: 0, bossWins: 0, bossLosses: 0, arenaWins: 0, arenaLosses: 0, fusions: 0, bought: 0, boughtK: 0, xp: 0, kamas: 0, sold: 0, soldK: 0, chests: 0, chestsBought: 0, equips: 0, presence: 0,
-    hours: Array.from({ length: 24 }, () => ({ xp: 0, kamas: 0, wins: 0, losses: 0 })), feed: [] };
+    hours: Array.from({ length: 24 }, () => ({ xp: 0, kamas: 0, wins: 0, losses: 0 })), feed: [],
+    health: { block: 0, bug: 0, sat: 0, queue: 0, manual: 0, stall: 0, learned: 0, error: 0 } };
   for (const l of txt.split(/\r?\n/)) { // \r\n toleres (log reecrit sous Windows)
     const m = l.match(/^(\S+Z) (.*)$/);
     if (!m) continue;
     const t = Date.parse(m[1]), msg = m[2], ago = Math.floor((now - t) / H), b = ago < 24 ? d.hours[23 - ago] : null;
     let g;
+    if (ago < 24) { // sante : incidents des dernieres 24 h
+      const H2 = d.health;
+      if (/^BLOQUE/.test(msg)) H2.block++; else if (/^BUG site/.test(msg)) H2.bug++; else if (/^RATE LIMIT/.test(msg)) H2.sat++;
+      else if (/^FILE d.attente - position/.test(msg)) H2.queue++; else if (/^COMBAT manuel en echec/.test(msg)) H2.manual++;
+      else if (/^COMBAT pat sans issue/.test(msg)) H2.stall++; else if (/^DEBLOCAGE appris/.test(msg)) H2.learned++; else if (/^ERREUR/.test(msg)) H2.error++;
+    }
     if ((g = msg.match(/^(BOSS |ARENE )?(VICTOIRE|DEFAITE)(?: \+(\d+) XP \+(\d+) kamas)?/))) {
       const win = g[2] === 'VICTOIRE', xp = +(g[3] ?? 0), k = +(g[4] ?? 0);
       if (g[1] === 'BOSS ') win ? d.bossWins++ : d.bossLosses++; else if (g[1]) win ? d.arenaWins++ : d.arenaLosses++; else win ? d.wins++ : d.losses++;
@@ -1026,7 +1033,7 @@ const parseLog = () => {
       if (b) { b.xp += xp; b.kamas += k; win ? b.wins++ : b.losses++; }
     } else if ((g = msg.match(/^VENDU .*, ([\d\s]+) K\)$/))) { d.sold++; d.soldK += +g[1].replace(/\D/g, ''); }
     else if ((g = msg.match(/^COFFRES ouverts (\d+), achetes (\d+)/))) { d.chests += +g[1]; d.chestsBought += +g[2]; }
-    else if ((g = msg.match(/^HDV achat .*, (\d+) K\)$/))) { d.bought++; d.boughtK += +g[1]; }
+    else if ((g = msg.match(/^HDV achat [^(]*\((?:gain [^,]*|score [^,]*), (\d+) K/))) { d.bought++; d.boughtK += +g[1]; } // formats ancien et actuel
     else if (/^FUSION/.test(msg)) d.fusions++;
     else if (/^EQUIPE/.test(msg)) d.equips++;
     else if (/^PRESENCE/.test(msg)) d.presence++;
@@ -1041,6 +1048,7 @@ const parseLog = () => {
 const readHeader = (text) => {
   const hd = text.match(/([^\n]+)\nNiv\. (\d+) · ([\d\s]+) K/);
   if (hd) Object.assign(S, { name: hd[1].trim(), level: +hd[2], kamas: +hd[3].replace(/\D/g, '') });
+  if (hd && S.level !== S.levelHist?.at(-1)?.lvl) { (S.levelHist ??= []).push({ t: Date.now(), lvl: S.level }); if (S.levelHist.length > 400) S.levelHist.shift(); } // progression
 };
 function startDashboard(page) {
   let shot = { t: 0, buf: null, p: null };
@@ -1758,6 +1766,12 @@ while (true) {
   // serveur surcharge : page d'erreur -> F5 tout de suite ; page figee stuckSec secondes -> deblocage appris (F5 en tete)
   if (/Application error|Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out|Something went wrong|This page couldn.t load|ERR_[A-Z_]+|(Error|HTTP|Erreur) 50[234]/i.test(text.slice(0, 400))) {
     log('ERREUR serveur - F5'); await page.reload().catch(() => {}); await sleep(2000);
+    autoClicked = false; idleSince = Date.now();
+  } else if (Date.now() - idleSince > CFG.stuckSec * 1000 && /\/chasse\?zone=\d+/.test(page.url())) {
+    // fige sur la page d'une zone : l'attaque n'est pas partie (serveur 503, clic perdu) -> on la relance, c'est ce qu'on voulait faire
+    const zh = page.url().match(/\/chasse\?zone=\d+/)[0];
+    log(`BLOQUE sur ${zh} - relance de l'attaque`);
+    await safe('attaque', attackGroup(page, zh, grpRank()));
     autoClicked = false; idleSince = Date.now();
   } else if (Date.now() - idleSince > CFG.stuckSec * 1000) {
     await unblock(page, text);
