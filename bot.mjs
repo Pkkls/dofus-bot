@@ -23,7 +23,7 @@ const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
 const setEnergy = (n, max) => { S.energy = n; S.energyAt = Date.now(); if (max) S.energyMax = max; };
-const energyNow = () => (S.energy == null ? null : Math.min(S.energyMax ?? Infinity, S.energy + Math.floor((Date.now() - (S.energyAt ?? Date.now())) / REGEN)));
+const energyNow = () => (S.energy == null ? null : Math.max(S.energy, Math.min(S.energyMax ?? Infinity, S.energy + Math.floor((Date.now() - (S.energyAt ?? Date.now())) / REGEN)))); // au-dessus du max (achats) : pas de regen, mais pas de plafond
 // rebase sans perdre le point en cours de recharge
 const spendEnergy = (n) => { if (S.energy == null) return; const e = energyNow(), at = S.energyAt ?? Date.now(); S.energyAt = Date.now() - (Date.now() - at) % REGEN; S.energy = Math.max(0, e - n); };
 const parseForge = (t) => ({
@@ -70,11 +70,11 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
-const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'spots', 'xphard', 'entrainement', 'zone', 'aventure', 'f5'];
+const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'spots', 'site', 'xphard', 'entrainement', 'zone', 'aventure', 'f5'];
 // horaires en minutes depuis minuit ; une plage peut passer minuit (ex. 540 -> 60 = 09:00 -> 01:00)
 const inWindow = (m, a, b) => a === b || (a < b ? m >= a && m < b : m >= a || m < b);
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -980,6 +980,7 @@ if (process.argv[2] === 'test') {
   setEnergy(0, 200); S.energyAt -= 2.5 * REGEN; assert.equal(energyNow(), 2);
   spendEnergy(1); assert.equal(energyNow(), 1); S.energyAt -= 0.5 * REGEN; assert.equal(energyNow(), 2); // le point en cours de recharge est garde
   setEnergy(199); S.energyAt -= 5 * REGEN; assert.equal(energyNow(), 200);
+  setEnergy(521); S.energyAt -= 5 * REGEN; assert.equal(energyNow(), 521); // au-dessus du max : pas plafonne
   assert.deepEqual(parseJeu('Ouvrir un coffre\nÉnergie\n1/100\n\n+1 dans 2 min 13 · 1 par combat, 2 en arène\n\nAcheter (300 K le point, encore 1000 aujourd’hui) :\n+1 · 300 K'),{ e: 1, max: 100, next: 133000, price: 300, left: 1000 });
   assert.equal(parseCard('4 Ronces Agressives 24 à 27 dommages Terre RARE').name, 'Ronces Agressives');
   assert.equal(parseCard('3\nTornabombe\nBombe : 20 à 22 dommages Air\nRARE').name, 'Tornabombe');
@@ -1170,7 +1171,7 @@ async function buyEnergy(page, max = false, sold = false) {
 
 // Inventaire du site : pour chaque onglet du menu, boutons et listes (nombres masques), diff avec le releve precedent.
 // Le 1er releve sert de reference ; ensuite chaque nouvel onglet/bouton est signale (log MAJ SITE, decision, alerte) et la page sauvegardee.
-let siteScanDue = false;
+let siteScanDue = !!S.siteScanPending; // releve demande avant un redemarrage
 async function siteScan(page) {
   await page.goto(BASE + '/');
   await sleep(2500);
@@ -1284,7 +1285,7 @@ page.goto = async (...a) => {
 page.on('load', () => setTimeout(() => page.locator('body').innerText().then(readHeader, () => {}), 1500));
 // mise a jour du site = nouvel id de deploiement Next (dpl=... dans les scripts) -> inventaire des onglets/boutons au prochain ecran de fin
 page.on('load', () => setTimeout(() => page.evaluate(() => [...document.scripts].map((s) => s.src.match(/dpl=([\w-]+)/)?.[1]).find(Boolean) ?? null).then((d) => {
-  if (d && d !== S.dpl) { if (S.dpl) { siteScanDue = true; log(`MAJ SITE detectee (deploiement ${S.dpl} -> ${d})`); } else siteScanDue = !S.siteMap; S.dpl = d; }
+  if (d && d !== S.dpl) { if (S.dpl) { siteScanDue = S.siteScanPending = true; log(`MAJ SITE detectee (deploiement ${S.dpl} -> ${d})`); } else siteScanDue = !S.siteMap; S.dpl = d; }
 }, () => {}), 2000)); // nom/niveau/kamas aussi pendant les passes
 await page.goto(COMBAT);
 
@@ -1381,7 +1382,7 @@ let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
-  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, spots: planSpots, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
+  coffres: openChests, deck: optimizeDeck, inventaire: equipFromInventory, hdv: hdvBuy, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
   aventure: async (p) => { huntLeft = 0; S.advBlockedUntil = 0; xpHard = false; S.xpHard = false; return goAdventure(p); }, // l'aventure reste ensuite prioritaire (wantAdventure)
 };
@@ -1681,7 +1682,7 @@ while (true) {
       decide(`XP hard automatique : ${S.learn?.hard?.n ? `${S.level - S.learn.hard.lvl} niveaux depuis la derniere mesure` : 'limite jamais mesuree'}, je recherche ma limite`);
       log('XP HARD demarre (auto)');
     }
-    if (siteScanDue) { siteScanDue = false; await safe('site', siteScan(page)); await page.goto(COMBAT).catch(() => {}); continue; }
+    if (siteScanDue) { siteScanDue = S.siteScanPending = false; await safe('site', siteScan(page)); await page.goto(COMBAT).catch(() => {}); continue; }
     if (trainLeft > 0 && CFG.manualFight) {
       trainZone ??= await pickHardZone(page);
       if (trainZone && (await safe('entrainement', attackGroup(page, trainZone, 3))) === true) { fight = 'entrainement'; continue; }

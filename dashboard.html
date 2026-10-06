@@ -569,6 +569,7 @@ const ACTS = {
   forge: ['Forge', 'sparkles', 'ameliorer le bouclier'],
   energie: ['Energie max', 'zap', 'acheter le plein, 300 K le point'],
   spots: ['Spots XP', 'map', 'mesurer les zones et garder la meilleure'],
+  site: ['Releve du site', 'monitor', 'nouveaux onglets et boutons'],
   xphard: ['XP hard', 'swords', 'monter jusqu\'a la defaite puis s\'adapter'],
   entrainement: ['Entrainement', 'brain', 'combats perdus d\'avance pour apprendre'],
   zone: ['Zone facile', 'map', 'changer de zone'],
@@ -736,8 +737,8 @@ function render(d) {
   const srv = S.status === 'file' ? ['File d\'attente', 'var(--warn)', `position ${S.queuePos ?? '?'}`] : S.status === 'rate-limit' ? ['Sature', 'var(--danger)', 'attente avant rechargement'] : (hh.sat ?? 0) + (hh.bug ?? 0) > 10 ? ['Instable', 'var(--warn)', `${(hh.sat ?? 0) + (hh.bug ?? 0)} saturations ou bugs en 24 h`] : ['OK', 'var(--accent)', `${(hh.queue ?? 0)} files d'attente en 24 h`];
   $('g-srv').textContent = srv[0]; $('g-srv').style.color = srv[1]; $('g-srvS').textContent = srv[2];
   const FG = S.forge;
-  $('g-res').textContent = S.energy == null ? '-' : `${S.energy}${S.energyMax ? ' / ' + S.energyMax : ''}`;
-  $('g-resS').textContent = `energie${FG ? `, bouclier de forge niv ${FG.level} (+${FG.bonus} %)` : ''}`;
+  $('g-res').textContent = S.energy == null ? '-' : S.energyMax && S.energy <= S.energyMax ? `${S.energy} / ${S.energyMax}` : fmt(S.energy);
+  $('g-resS').textContent = `energie${S.energyMax && S.energy > S.energyMax ? ` (au-dessus du max ${S.energyMax})` : ''}${FG ? `, bouclier de forge niv ${FG.level} (+${FG.bonus} %)` : ''}`;
 
   // moteur de combat
   const L = S.learn ?? {}, prof = L.prof ?? {}, pct = (x) => Math.round(x * 100) + ' %';
