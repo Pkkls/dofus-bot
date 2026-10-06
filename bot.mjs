@@ -17,7 +17,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -462,14 +462,21 @@ const rewardProfile = (k, win, turns) => { const p = ((S.learn ??= {}).prof ??= 
 // valeur d'un plan (cartes jouees ce tour) avec un focus pour les cartes mono-cible
 // ponytail: degats ennemis estimes par ce qu'on a encaisse au tour precedent ; critiques, PM, retraits de PA ignores
 // Indices de defaite (S.hints, par monstre) traduits en regles. HINT_SEED : indices connus avant leur capture automatique.
-const HINT_SEED = { Phossile: 'Utiliser deux fois de suite le meme element lui renvoie les degats' };
+const HINT_SEED = { Phossile: 'Utiliser deux fois de suite le meme element lui renvoie les degats', 'Sphincter Cell': 'Indice : à partir du tour 4, vos soins vous blessaient au lieu de vous soigner.' };
 const hintOf = (name) => {
   const all = { ...HINT_SEED, ...Object.fromEntries(Object.entries(S.hints ?? {}).map(([k, v]) => [k, v.hint])) };
   const k = Object.keys(all).find((n) => name === n || name.startsWith(n + ' ') || n.startsWith(name + ' '));
   return k ? all[k] : '';
 };
 // ponytail: une seule regle reconnue pour l'instant ; en ajouter une par nouvel indice capture (dump/defaite-*.txt)
-const rulesOf = (name) => { const t = hintOf(name); return { altElem: /m[êe]me [ée]l[ée]ment/i.test(t) && /(deux fois|de suite|cons[ée]cuti|renvo)/i.test(t) }; };
+const rulesOf = (name) => {
+  const t = hintOf(name);
+  return {
+    altElem: /m[êe]me [ée]l[ée]ment/i.test(t) && /(deux fois|de suite|cons[ée]cuti|renvo)/i.test(t),
+    // "a partir du tour 4, vos soins vous blessaient" : soins (et vol de vie) comptes en degats subis a partir de ce tour
+    healHurtFrom: /soins?\b.*\bbless/i.test(t) ? +(t.match(/tour (\d+)/i)?.[1] ?? 1) : null,
+  };
+};
 const elemOf = (c) => c.fx.dmg[0]?.elem ?? null;
 // ordre de jeu : buffs, mono-cible, zone, soins ; si un ennemi interdit la repetition d'element, on alterne (depuis le dernier element joue)
 const orderCards = (cards, st, last) => {
@@ -506,7 +513,10 @@ const planValue = (cards, st, focus, inc, s, P = PROFILES.equilibre, last = null
   const shield = cards.reduce((a, c) => a + (c.fx.shieldPct * st.max) / 100 + (c.fx.shieldLvl * (st.level || S.level || 100)) / 100, 0);
   const danger = (st.hp + st.shield - inc) / st.max; // PV restants apres le prochain tour ennemi, en part du max
   const w = danger < 0.35 ? P.heal[0] : danger < 0.6 ? P.heal[1] : P.heal[2];
-  v += w * Math.min(heal, st.max - st.hp) + (danger < 0.6 ? P.shield : P.shield / 3) * Math.min(shield, Math.max(0, inc - st.shield));
+  const hurtFrom = Math.min(...alive.map((e) => rulesOf(e.name).healHurtFrom ?? Infinity));
+  if ((st.turn ?? 0) >= hurtFrom) v -= 2 * heal; // soins inverses : chaque PV "soigne" est un PV perdu
+  else v += w * Math.min(heal, st.max - st.hp);
+  v += (danger < 0.6 ? P.shield : P.shield / 3) * Math.min(shield, Math.max(0, inc - st.shield));
   return v;
 };
 // meilleur plan : sous-ensembles de la main payables avec les PA (arme 1 fois/tour), x focus ; renvoie la carte a jouer en premier
@@ -535,6 +545,8 @@ async function playTurn(page) {
   fightMem.ehp = st.enemies.reduce((a, e) => a + e.hp + e.prot, 0);
   fightMem.foes = st.enemies.map((e) => e.name); // pour ranger l'indice de defaite par monstre
   const ruled = st.enemies.filter((e) => e.hp > 0 && rulesOf(e.name).altElem).map((e) => e.name);
+  const hurt = st.enemies.filter((e) => e.hp > 0 && rulesOf(e.name).healHurtFrom).map((e) => `${e.name} (tour ${rulesOf(e.name).healHurtFrom})`);
+  if (hurt.length && !fightMem.hurtSaid) { fightMem.hurtSaid = true; decide(`Mecanique ${hurt.join(', ')} (indice) : plus aucun soin ni vol de vie a partir de ce tour`); }
   if (ruled.length && !fightMem.ruleSaid) { fightMem.ruleSaid = true; decide(`Mecanique ${ruled.join(', ')} (indice) : j'alterne les elements, jamais deux fois le meme de suite`); }
   fightMem.turn = st.turn;
   const P = PROFILES[fightMem.profile];
@@ -809,6 +821,11 @@ if (process.argv[2] === 'test') {
       const seq = orderCards(['Boliche', 'Bâton du Shamansot', 'Cubitus'].map((n) => ({ ...stP.hand.find((c) => c.name === n) ?? card(n, 3, ['29 à 32 dommages Eau']), fx: cardFx((stP.hand.find((c) => c.name === n) ?? { lines: ['29 à 32 dommages Eau'] }).lines) })), stP, null);
       assert.ok(seq.every((c, k) => !k || elemOf(c) !== elemOf(seq[k - 1])), seq.map((c) => c.name).join()); // Eau, Feu, Eau
     }
+    { // Sphincter Cell : soins inverses a partir du tour 4
+      const stS = { ...st, hp: 600, enemies: [{ ...st.enemies[0], name: 'Sphincter Cell' }] };
+      const heal = [{ ...card('Secourisme', 2, ['Soigne 23% des PV max']), fx: cardFx(['Soigne 23% des PV max']) }];
+      assert.ok(planValue(heal, { ...stS, turn: 2 }, 0, 900, s) > 0 && planValue(heal, { ...stS, turn: 5 }, 0, 900, s) < 0);
+    }
     const hurt = bestMove({ ...st, hp: 600 }, 900, s, false, new Set(), PROFILES.equilibre);
     assert.ok(hurt.plan.includes('Secourisme'), JSON.stringify(hurt.plan)); // en danger : soin
   }
@@ -1049,7 +1066,7 @@ await managePass(page);
 let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastText = '', combats = 0;
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
 let endHandled = false, deckDue = false, stuck = 0, huntLeft = 0, backToAdventure = false;
-let trainLeft = 0, trainZone = null, climbStreak = 0, climbDir = 0, lastLevel = 0; // entrainement demande depuis le tableau de bord
+let trainLeft = 0, trainZone = null, climbStreak = 0, climbDir = 0, climbHist = [], lastLevel = 0; // entrainement demande depuis le tableau de bord
 let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
@@ -1133,7 +1150,15 @@ while (true) {
     if (adventure && !win) { decide(`Aventure perdue : deck revu, puis ${CFG.huntWins} victoires en chasse avant de retenter`); huntLeft = CFG.huntWins; deckDue = true; log('AVENTURE bloquee - deck revu, ' + CFG.huntWins + ' victoires en chasse puis retente'); }
     else if (!adventure && !fight) {
       results.push(win); if (results.length > 10) results.shift(); winsSinceStrike = win ? winsSinceStrike + 1 : 0;
-      if (CFG.climbWins) { if (!win) { climbStreak = 0; climbDir = -1; } else if (++climbStreak >= CFG.climbWins) { climbStreak = 0; climbDir = 1; } }
+      // vise targetWin (pas 100 %) : sur les 20 derniers, au-dessus on monte, sous la cible -10 pts on redescend ; climbWins combats mini entre deux changements
+      if (CFG.climbWins) {
+        climbHist.push(win); if (climbHist.length > 20) climbHist.shift();
+        const rate = climbHist.filter(Boolean).length / climbHist.length;
+        if (++climbStreak >= CFG.climbWins && climbHist.length >= CFG.climbWins) {
+          if (rate > CFG.targetWin) { climbDir = 1; climbStreak = 0; climbHist = []; }
+          else if (rate < CFG.targetWin - 0.1) { climbDir = -1; climbStreak = 0; climbHist = []; }
+        }
+      }
       if (win && huntLeft > 0 && --huntLeft === 0) backToAdventure = true;
     }
     if (winsSinceStrike >= 30) strikes = 0;
@@ -1141,11 +1166,13 @@ while (true) {
       writeFileSync(`dump/defaite-${Date.now()}.txt`, text);
       const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
       const i = lines.findIndex((l) => /indice|astuce|conseil|m[ée]canique|faiblesse|pense [àa]/i.test(l));
-      const hint = i >= 0 ? lines.slice(i, i + 3).join(' / ') : lines.slice(Math.max(0, lines.findIndex((l) => /Défaite/.test(l))), lines.findIndex((l) => /Défaite/.test(l)) + 4).join(' / ');
+      const hint = i >= 0 ? lines[i] : null; // pas d'indice (ex. arene) : rien a retenir
       const foes = fightMem.foes?.join(', ') || '?';
+      if (hint) {
       for (const f of fightMem.foes ?? []) (S.hints ??= {})[f] = { hint, at: Date.now(), with: foes };
       log(`INDICE (${foes}) ${hint.slice(0, 300)}`);
       decide(`Defaite contre ${foes} : indice du jeu "${hint.slice(0, 200)}"`);
+      } else decide(`Defaite contre ${foes} : pas d'indice affiche`);
     }
     if (fight === 'entrainement' && fightMem.profile) {
       const dmgFrac = fightMem.ehp0 ? Math.max(0, Math.min(1, 1 - fightMem.ehp / fightMem.ehp0)) : 0;
@@ -1216,7 +1243,7 @@ while (true) {
       continue;
     }
     if (climbDir && zone && !adventure) { // chasse : on monte tant qu'on gagne, on redescend a la premiere defaite
-      zone = await climbZone(page, zone, climbDir, climbDir > 0 ? `${CFG.climbWins} victoires d'affilee` : 'defaite');
+      zone = await climbZone(page, zone, climbDir, `taux de victoire ${climbDir > 0 ? 'au-dessus de' : 'sous'} la cible ${Math.round(CFG.targetWin * 100)} %`);
       climbDir = 0;
       await attackGroup(page, zone, strikes ? 0 : CFG.maxGroup);
       continue;

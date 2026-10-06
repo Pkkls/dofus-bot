@@ -438,7 +438,8 @@ const CFG_META = {
   energyBuy: ["Acheter de l'energie", '1 = a la reserve, achete +10 (300 K le point) sans toucher a la reserve kamas energie', 0, 1, 1],
   trainFights: ['Combats d\'entrainement', 'par seance, lancee avec le bouton Entrainement', 1, 50, 1],
   trainLevel: ['Niveau d\'entrainement', 'zone visee (niveau max), perdus d\'avance', 1, 300, 5],
-  climbWins: ['Montee de zone', 'victoires de chasse d\'affilee avant le palier suivant, 0 = coupee ; une defaite fait redescendre', 0, 200, 1],
+  climbWins: ['Montee de zone', 'combats mini entre deux changements de palier, 0 = coupee', 0, 200, 1],
+  targetWin: ['Taux de victoire vise', 'au-dessus on monte de zone, sous la cible -10 pts on redescend (pas 100 %)', 0.5, 1, 0.05],
   manualFight: ['Combat manuel', '1 = le moteur du bot joue les cartes, 0 = mode Auto du jeu', 0, 1, 1],
   energyResume: ['Energie de reprise', 'apres la reserve, la chasse reprend a ce niveau (1 point / 6 min)', 1, 1000, 1],
 };
