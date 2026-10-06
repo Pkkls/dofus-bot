@@ -61,7 +61,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['stats', 'learn', 'hints', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['stats', 'learn', 'hints', 'worn', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -76,7 +76,7 @@ const WEIGHTS = {
   'PA': 100, 'PM': 60, 'Portée': 30, 'Invocation': 10,
   'Vitalité': 1, 'Puissance': 1.5, 'Sagesse': 0.3, // Force/Intel/Chance/Agi : selon le deck (ELEM_SHARE)
   'Dommages': 5, 'Critique': 4, 'Soins': 2, 'Dommages Critiques': 2,
-  'Tacle': 0.3, 'Fuite': 0.3, 'Esquive PA': 0.5, 'Esquive PM': 0.5, 'Retrait PA': 0.5, 'Retrait PM': 0.5, 'Prospection': 0.3, 'Initiative': 0.05,
+  'Tacle': 0.3, 'Fuite': 0.3, 'Esquive PA': 0.5, 'Esquive PM': 0.5, 'Retrait PA': 0.5, 'Retrait PM': 0.5, 'Prospection': 0.3, 'Initiative': 0.05, 'Pods': 0,
 };
 // part de chaque element dans les cartes de degats du deck (maj par optimizeDeck) : le stuff suit le build
 let ELEM_SHARE = { Neutre: 0.2, Terre: 0.2, Feu: 0.2, Eau: 0.2, Air: 0.2 };
@@ -221,6 +221,8 @@ async function equipFromInventory(page) {
       if (d.diff > best) { best = d.diff; bestIdx = i; bestName = d.name; }
       if (d.diff < 0 && SELLABLE.includes(slot) && canSell(d)) junk.push([d.name, d.diff]);
     }
+    const ref = seen.find((x) => x.cmp); // piece portee = score propre - ecart affiche
+    if (ref) (S.worn ??= {})[slot] = Math.round(ref.own - ref.diff); else if (S.emptySlots?.includes(slot)) (S.worn ??= {})[slot] = 0;
     decide(`Inventaire ${slot} : ${bestIdx >= 0 ? `j'equipe ${bestName} (score +${Math.round(best)})` : 'rien de mieux que ma piece'}${junk.length ? `, ${junk.length} moins bon(s) a vendre` : ''}`);
     if (bestIdx >= 0 && (await openItem(main, items.nth(bestIdx)))?.name === bestName) {
       await main.getByRole('button', { name: /^Équiper/ }).first().click();
@@ -286,6 +288,7 @@ async function optimizeRings(page, main) {
   }
   const [n1, n2] = await worn();
   const minWorn = Math.min(scoreOf(n1) ?? -Infinity, scoreOf(n2) ?? -Infinity);
+  if (Number.isFinite(minWorn)) (S.worn ??= {}).Anneau = Math.round(minWorn); // l'HDV compare au plus faible des deux
   const spare = new Set(sack.filter((r) => r.level >= S.level - CFG.spareWindow).sort((a, b) => b.own - a.own).slice(0, CFG.ringSpare));
   // vendu : hors reserve, moins bon que les deux portes, et canSell (dans le doute on garde)
   const junk = sack.filter((r) => !spare.has(r) && r.own < minWorn && canSell(r)).map((r) => [r.name, r.own - minWorn]);
@@ -686,8 +689,19 @@ async function fightArena(page) {
 // ponytail: emplacements vides seulement, l'HDV ne montre pas de comparaison avec la piece portee
 const parseHdvRows = (t) => [...t.matchAll(/\n([^\n]+)\nNiveau (\d+) · vendu par [^\n]*\n([\d\s]+) K\n(Acheter|Trop cher)/g)]
   .map((m, idx) => ({ idx, raw: m[1], name: m[1].replace(/ · Rayonnant$/, ''), level: +m[2], price: +m[3].replace(/\D/g, ''), buyable: m[4] === 'Acheter' }));
+// HDV (prix bas, pas d'economie) : pour chaque emplacement au score connu, l'annonce de mon niveau au meilleur gain par kama
+// gain = score brut de l'annonce - score de la piece portee (S.worn, 0 si vide) ; seuil : +10 % de la piece ou +10
+// panneau de detail d'une annonce : "Nom\nRARETE\nEmplacement\nNiveau N\n+stats..." jusqu'a l'annonce suivante ; null si absent
+const hdvStats = (t, name) => {
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = t.match(new RegExp(`\\n${esc}(?: · Rayonnant)?\\n(?:COMMUN|PEU COMMUN|RARE|ÉPIQUE|MYTHIQUE|LÉGENDAIRE)\\n[^\\n]+\\nNiveau \\d+\\n([\\s\\S]*?)(?=\\n[^\\n]+\\nNiveau \\d+ · vendu par|$)`));
+  return m ? m[1] : null;
+};
 async function hdvBuy(page) {
-  for (const slot of [...new Set(S.emptySlots ?? [])]) {
+  let bought = 0; const seenRows = []; // seenRows : diagnostic dump/hdv_eval.txt
+  const slots = [...new Set([...(S.emptySlots ?? []), ...Object.keys(S.worn ?? {})])].filter((s) => SLOTS.includes(s));
+  for (const slot of slots) {
+    const worn = S.emptySlots?.includes(slot) ? 0 : S.worn?.[slot] ?? 0;
     const budget = S.kamas - CFG.kamasReserve;
     if (budget <= 0) { log(`HDV : budget nul (reserve ${CFG.kamasReserve})`); return; }
     await page.goto(BASE + '/hdv');
@@ -697,25 +711,32 @@ async function hdvBuy(page) {
     await page.getByRole('button', { name: 'Filtrer' }).click();
     await sleep(2500);
     const all = parseHdvRows('\n' + await main.innerText());
+    seenRows.push(`${slot} : ${all.length} annonces, ${all.filter((x) => x.buyable && x.level <= S.level && x.price <= budget).length} dans niveau+budget (niv ${S.level}, budget ${budget})`);
     // ligne = plus proche ancetre du nom qui contient un bouton Acheter / Trop cher (n-ieme si le nom se repete)
     const rowOf = (r) => main.getByText(r.raw, { exact: true }).nth(all.filter((x) => x.raw === r.raw && x.idx < r.idx).length)
       .locator('xpath=ancestor::*[.//button[normalize-space()="Acheter" or normalize-space()="Trop cher"]][1]');
     let best = null;
-    for (const r of all.filter((x) => x.buyable && x.level <= S.level && x.price <= budget).slice(0, 12)) {
+    for (const r of all.filter((x) => x.buyable && x.level <= S.level && x.price <= budget).sort((a, b) => a.price - b.price).slice(0, 15)) {
       const row = rowOf(r);
       await row.locator('button:has(img)').first().click().catch(() => {}); // ouvre les stats de l'objet
-      await sleep(400);
-      const s = scoreItem(await row.innerText().catch(() => '')); // seules les lignes "+N Stat" comptent
-      if (s > 0 && (!best || s / r.price > best.s / best.r.price)) best = { r, s };
+      await sleep(600);
+      const rt = hdvStats(await main.innerText(), r.name); // les stats s'affichent dans un panneau a part, pas dans la ligne
+      const s = (rt == null ? -Infinity : scoreItem(rt)) - worn; // gain sur la piece portee ; seules les lignes "+N Stat" comptent
+      seenRows.push(`${slot} | ${r.name} niv ${r.level} ${r.price} K -> ${Math.round(s)} | ${(rt ?? 'panneau introuvable').replace(/\n/g, ' / ').slice(0, 160)}`);
+      if (s >= Math.max(10, 0.1 * Math.abs(worn)) && (!best || s / r.price > best.s / best.r.price)) best = { r, s };
     }
-    if (!best) { decide(`HDV ${slot} : aucun objet utile de mon niveau sous ${Math.round(budget / 1000)} k`); log(`HDV ${slot} : rien d'utile dans le budget (${Math.round(budget / 1000)} k)`); continue; }
+    if (!best) { decide(`HDV ${slot} : rien de mieux que ma piece (score ${worn}) dans mon niveau sous ${Math.round(budget / 1000)} k`); continue; }
+    decide(`HDV ${slot} : ${best.r.name} niv ${best.r.level}, +${Math.round(best.s)} sur ma piece (${worn}) pour ${best.r.price} K, meilleur gain par kama`);
     await rowOf(best.r).getByRole('button', { name: 'Acheter', exact: true }).click();
     const ok = main.getByRole('button', { name: /^Confirmer/ });
     if (await ok.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await ok.click();
     await sleep(1500);
     S.kamas -= best.r.price;
-    log(`HDV achat ${slot}: ${best.r.name} niv ${best.r.level} (score ${Math.round(best.s)}, ${best.r.price} K)`);
+    log(`HDV achat ${slot}: ${best.r.name} niv ${best.r.level} (gain +${Math.round(best.s)}, ${best.r.price} K)`);
+    bought++;
   }
+  writeFileSync('dump/hdv_eval.txt', seenRows.join('\n'));
+  return bought;
 }
 
 if (process.argv[2] === 'test') {
@@ -724,6 +745,7 @@ if (process.argv[2] === 'test') {
   assert.deepEqual([AR.elo, AR.opti, AR.rank, AR.energy, AR.opp.length, AR.opp[1].name, AR.opp[1].opti], [985, 2302, '6145', 148, 2, 'Pad', 2036]);
   const HR = parseHdvRows('\nFiltrer\nYugoufle\nNiveau 41 · vendu par Hadu\n300 K\nAcheter\n★\nKompost · Rayonnant\nNiveau 60 · vendu par Ouateu\n1 500 K\nTrop cher');
   assert.deepEqual(HR.map((r) => [r.name, r.level, r.price, r.buyable]), [['Yugoufle', 41, 300, true], ['Kompost', 60, 1500, false]]);
+  assert.equal(hdvStats('\nFiltrer\nSac du Récolteur\nNiveau 15 · vendu par T\n300 K\nAcheter\nSac du Récolteur\nRARE\nCape\nNiveau 15\n+400 Pods\n+20 Vitalité\nYugoufle\nNiveau 41 · vendu par H\n300 K\nAcheter', 'Sac du Récolteur'), '+400 Pods\n+20 Vitalité');
   assert.ok(scoreItem('Comparé à X\n+1 PM\n+10 Vitalité\n+10 Sagesse\n+10 Puissance\n-3 Dommages\n+2% Résistance Terre\n-4 Tacle') > 0);
   assert.ok(scoreItem('Comparé à X\n-40 Vitalité\n-10 Sagesse\n-25 Intelligence\n+60 Agilité\n+1% Critique\n+4 Dommages\n-5 Dommages Feu') < 30);
   assert.ok(scoreItem('Comparé à X\n-1 PA\n+50 Vitalité') < 0);
@@ -937,7 +959,7 @@ async function managePass(page) {
   await safe('coffres', openChests(page));
   await safe('deck', optimizeDeck(page));
   await safe('inventaire', equipFromInventory(page));
-  await safe('hdv', hdvBuy(page));
+  if ((await safe('hdv', hdvBuy(page))) > 0) await safe('inventaire', equipFromInventory(page)); // equipe les achats tout de suite
   await safe('carac', allocateStats(page));
   for (const k of ['coffres', 'deck', 'inventaire', 'hdv', 'carac']) S.last[k] = Date.now();
   if (!ZONES) await safe('zones', allZones(page)); // niveaux des zones pour le garde-fou (une fois par lancement)
@@ -1014,10 +1036,16 @@ while (true) {
   // rate-limit de l'hebergeur (o2switch) : on respecte, pause 5 min
   if (/HTTP 429|Slow down/.test(text)) { S.status = 'rate-limit'; decide('Serveur sature (429) : pause 5 min pour ne pas aggraver'); log('RATE LIMIT 429 - pause 5 min'); await sleep(300000); await page.goto(COMBAT).catch(() => {}); idleSince = Date.now(); continue; }
 
-  // test de presence : on attend que l'humain reponde, on ne clique jamais dedans
-  if (/Es-tu toujours là/.test(text)) {
+  // test de presence / ecran d'inactivite ("Tu etais inactif", place liberee) : on previent et on attend l'humain, on ne clique jamais dedans
+  const afk = /Tu étais inactif|ta place a été libérée/i.test(text);
+  if (afk || /Es-tu toujours là/.test(text)) {
     S.status = 'presence';
-    if (!presenceAlerted) { decide('Test de presence : je ne clique jamais dedans, j\'attends le tien'); log('PRESENCE demandee - en attente de toi'); alert('test de presence, clique dans la fenetre'); await page.bringToFront().catch(() => {}); presenceAlerted = true; }
+    if (!presenceAlerted) {
+      const what = afk ? 'ecran d\'inactivite (place liberee)' : 'test de presence';
+      decide(`${afk ? 'Ecran d\'inactivite' : 'Test de presence'} : je ne clique jamais dedans, j'attends le tien`);
+      log(`PRESENCE ${afk ? 'inactivite (place liberee)' : 'demandee'} - en attente de toi`);
+      alert(`${what}, clique dans la fenetre`); await page.bringToFront().catch(() => {}); presenceAlerted = true;
+    }
     idleSince = Date.now();
     await sleep(2000);
     continue;
