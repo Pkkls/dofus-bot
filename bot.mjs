@@ -17,7 +17,7 @@ const decide = (m) => {
   push();
 };
 const CFG_SPEC = { vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
-  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000] }; // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
+  scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1] }; // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
 const REGEN = 360000;
@@ -25,6 +25,11 @@ const setEnergy = (n, max) => { S.energy = n; S.energyAt = Date.now(); if (max) 
 const energyNow = () => (S.energy == null ? null : Math.min(S.energyMax ?? Infinity, S.energy + Math.floor((Date.now() - (S.energyAt ?? Date.now())) / REGEN)));
 // rebase sans perdre le point en cours de recharge
 const spendEnergy = (n) => { if (S.energy == null) return; const e = energyNow(), at = S.energyAt ?? Date.now(); S.energyAt = Date.now() - (Date.now() - at) % REGEN; S.energy = Math.max(0, e - n); };
+// /jeu : energie exacte (minuteur du prochain point), prix et quota d'achat du jour
+const parseJeu = (t) => {
+  const m = t.match(/Énergie\n(\d+)\/(\d+)\n+(?:\+1 dans (?:(\d+) min)?\s*(\d+)?)?/);
+  return m && { e: +m[1], max: +m[2], next: (+(m[3] ?? 0) * 60 + +(m[4] ?? 0)) * 1000, price: +(t.match(/\(([\d\s]+) K le point/)?.[1].replace(/\D/g, '') ?? 0), left: +(t.match(/encore (\d+) aujourd/)?.[1] ?? 0) };
+};
 const log = (line) => { const l = `${new Date().toISOString()} ${line}`; console.log(l); appendFileSync('bot.log', l + '\n'); push(); };
 // temps reel : chaque client du tableau de bord garde un flux SSE ouvert ; push() regroupe les envois (max ~5/s)
 const clients = new Set();
@@ -488,6 +493,7 @@ if (process.argv[2] === 'test') {
   setEnergy(0, 200); S.energyAt -= 2.5 * REGEN; assert.equal(energyNow(), 2);
   spendEnergy(1); assert.equal(energyNow(), 1); S.energyAt -= 0.5 * REGEN; assert.equal(energyNow(), 2); // le point en cours de recharge est garde
   setEnergy(199); S.energyAt -= 5 * REGEN; assert.equal(energyNow(), 200);
+  assert.deepEqual(parseJeu('Ouvrir un coffre\nÉnergie\n1/100\n\n+1 dans 2 min 13 · 1 par combat, 2 en arène\n\nAcheter (300 K le point, encore 1000 aujourd’hui) :\n+1 · 300 K'),{ e: 1, max: 100, next: 133000, price: 300, left: 1000 });
   assert.equal(parseCard('4 Ronces Agressives 24 à 27 dommages Terre RARE').name, 'Ronces Agressives');
   assert.equal(parseCard('1 Tirs Puissants +100 Puissance (1 tour) +10 % Critique (1 tour) CLASSE').dmg, null);
   assert.equal(parseCard('3 Flèche Glacée -2 PA à la cible 12 à 14 dommages Eau COMMUN').name, 'Flèche Glacée');
@@ -621,6 +627,25 @@ async function gate() {
     await sleep(15000);
   }
 }
+// a la reserve : lit l'energie exacte, et si CFG.energyBuy, achete +10 sans toucher a kamasReserve
+async function buyEnergy(page) {
+  await page.goto(BASE + '/jeu');
+  await page.getByText(/^Acheter \(/).waitFor({ timeout: 20000 });
+  const read = async () => { const j = parseJeu(await page.locator('main').innerText()); if (j) { setEnergy(j.e, j.max); if (j.next) S.energyAt -= REGEN - j.next; } return j; };
+  const j = await read();
+  if (!j || j.e > CFG.energyReserve) return;
+  if (!CFG.energyBuy) { decide(`Energie ${j.e}/${j.max} : achat coupe (reglage), j'attends la recharge`); return; }
+  if (j.left < 10 || S.kamas - 10 * j.price < CFG.kamasReserve) { decide(`Energie ${j.e}/${j.max} : pas d'achat (${S.kamas} K, reserve ${CFG.kamasReserve} K, quota ${j.left})`); return; }
+  decide(`Energie ${j.e}/${j.max} : j'achete +10 (${10 * j.price} K), il reste ${S.kamas - 10 * j.price} K au-dessus de la reserve de ${CFG.kamasReserve} K`);
+  await page.getByRole('button', { name: /^\+10 ·/ }).click();
+  const ok = page.getByRole('button', { name: /^Confirmer/ });
+  if (await ok.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await ok.click();
+  await sleep(2000);
+  const after = await read();
+  if (after?.e > j.e) { S.kamas -= 10 * j.price; log(`ENERGIE achetee +10 (${10 * j.price} K) : ${after.e}/${after.max}`); }
+  else log(`ENERGIE achat sans effet (${after?.e ?? '?'}/${j.max})`);
+}
+
 // Coffres d'abord (nouveaux objets/cartes), puis deck, stuff, caracs ; au demarrage et tous les CFG.passEvery combats
 async function managePass(page) {
   S.status = 'gestion';
@@ -745,7 +770,8 @@ while (true) {
     }
     }
     autoClicked = false; idleSince = Date.now();
-    if (/Plus assez d.énergie/.test(text) && text !== energyText) { energyText = text; setEnergy(0); S.recharging = true; }
+    if (/Plus assez d.énergie/.test(text) && text !== energyText) { energyText = text; setEnergy(0); }
+    if (!S.recharging && energyNow() != null && energyNow() <= CFG.energyReserve) { await safe('energie', buyEnergy(page)); S.last.energie = Date.now(); await page.goto(COMBAT); } // gate() passe en recharge si rien n'a ete achete
     await gate(); // plage horaire + plafond de combats/heure, avant de lancer quoi que ce soit
     idleSince = Date.now();
 
@@ -769,7 +795,7 @@ while (true) {
       if (r === true) { fight = 'boss'; lastBoss = Date.now(); continue; }
       nextBossCheck = Date.now() + (r > 0 ? r + 5000 : 150000); // juste apres l'arrivee annoncee, sinon dans 2.5 min
     }
-    if (S.recharging) { await sleep(1000); continue; } // recharge : rien d'autre que le boss
+    if (S.recharging) { if (page.url() !== COMBAT) await page.goto(COMBAT); await sleep(1000); continue; } // recharge : rien d'autre que le boss, attente sur l'ecran de fin
     // arene toutes les CFG.arenaEvery minutes, si assez d'energie et un adversaire plus faible
     if (CFG.arenaEvery > 0 && Date.now() - lastArena > CFG.arenaEvery * 60000) {
       lastArena = S.last.arene = Date.now();
