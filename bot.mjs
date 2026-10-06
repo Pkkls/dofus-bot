@@ -629,7 +629,8 @@ async function playTurn(page) {
   const main = page.locator('main');
   let st = await readFight(page);
   if (!st.myTurn || !st.hand.length) return false;
-  const s = S.stats ?? NO_STATS;
+  const abyss = inAbyss(page.url(), await page.locator('main').innerText().catch(() => '')); // stats 100 partout dans les abysses
+  const s = abyss ? abyssStats() : S.stats ?? NO_STATS;
   if (st.turn <= 1 || !fightMem.profile) fightMem = { turn: st.turn, endHp: null, inc: 0, profile: trainLeft > 0 ? pickTrainProfile() : pickProfile(), ehp0: st.enemies.reduce((a, e) => a + e.max, 0) };
   fightMem.ehp = st.enemies.reduce((a, e) => a + e.hp + e.prot, 0);
   fightMem.minHp = Math.min(fightMem.minHp ?? 1, st.hp / st.max); // pire moment du combat, pour la part de vitalite
@@ -664,7 +665,8 @@ async function playTurn(page) {
     else {
       r.ko++;
       const next = STALL_HYPOS.findIndex((x, k) => !fightMem.tried.has(k));
-      if (next < 0) { // tout essaye sans progres : fuite, et adversaire evite jusqu'a ce que le perso evolue
+      if (next < 0 && abyss) { fightMem.tried = new Set(); fightMem.hyp = 0; fightMem.hypTurn = st.turn; fightMem.hypEhp = ehpNow; decide('Pat dans les abysses : une seule vie, pas de fuite, je reprends les hypotheses'); }
+      else if (next < 0) { // tout essaye sans progres : fuite, et adversaire evite jusqu'a ce que le perso evolue
         decide(`Pat sans issue contre ${foeKey} : ${STALL_HYPOS.length} hypotheses essayees sans entamer l'adversaire, je fuis`);
         log(`COMBAT pat sans issue tour ${st.turn} - fuite`);
         page.once('dialog', (dg) => dg.accept().catch(() => {}));
@@ -674,9 +676,11 @@ async function playTurn(page) {
         if (await ok.isVisible().catch(() => false)) await ok.click().catch(() => {});
         return true;
       }
-      fightMem.hyp = next; fightMem.tried.add(next); fightMem.hypTurn = st.turn; fightMem.hypEhp = ehpNow;
-      decide(`Pat : "${H.name}" n'entame pas l'adversaire, j'essaie "${STALL_HYPOS[next].name}"`);
-      log(`COMBAT pat - hypothese ${STALL_HYPOS[next].name}`);
+      if (next >= 0) { // (abysses : cycle deja relance ci-dessus)
+        fightMem.hyp = next; fightMem.tried.add(next); fightMem.hypTurn = st.turn; fightMem.hypEhp = ehpNow;
+        decide(`Pat : "${H.name}" n'entame pas l'adversaire, j'essaie "${STALL_HYPOS[next].name}"`);
+        log(`COMBAT pat - hypothese ${STALL_HYPOS[next].name}`);
+      }
     }
   }
   const HYP = fightMem.stall ? STALL_HYPOS[fightMem.hyp] : null;
@@ -950,6 +954,23 @@ async function hdvBuy(page) {
   return bought;
 }
 
+// Regles lues sur /abysses : equipement et caracteristiques ignores (6 PA, 3 PM, 100 partout), une seule vie (une fuite ou une defaite
+// sans Elixir de vie finit la descente), pas de mode Auto, carte bonus apres chaque victoire (Rare : stats ; Epique : critique, dommages
+// critiques, portee ; Legendaire : PA ou PM sans limite), nouveau sort et PV pleins tous les 5 etages, +30 % de PV sinon.
+const inAbyss = (url, text) => !!(S.abyssRun && Date.now() - S.abyssRun.start < 3 * 3600000 && (/\/abysses/i.test(url) || /Étage \d+/i.test(text ?? '')));
+const abyssStats = () => { // 100 partout + bonus des cartes Rare prises pendant la descente
+  const b = S.abyssRun?.bonus ?? {};
+  return { Force: 100 + (b.Force ?? 0), Intelligence: 100 + (b.Intelligence ?? 0), Chance: 100 + (b.Chance ?? 0), Agilité: 100 + (b.Agilité ?? 0), Puissance: b.Puissance ?? 0, dmg: {} };
+};
+// valeur d'un choix : PA d'abord (une carte de plus par tour), critique ensuite, stats, degats du sort ; + bonus appris (etages atteints avec ce choix)
+const abyssValue = (raw) => {
+  const t = raw.replace(/\s+/g, ' ');
+  const learned = S.learn?.abyssPicks?.[abyssKey(raw)];
+  return (/L[ée]gendaire/i.test(t) ? 40 : 0) + (/\bPA\b/.test(t) ? 150 : 0) + (/\bPM\b/.test(t) ? 10 : 0) + (/[ÉE]pique/i.test(t) ? 35 : 0) + (/critique/i.test(t) ? 20 : 0) + (/\bRare\b/i.test(t) ? 10 : 0)
+    + cardFx(raw.split('\n')).dmg.reduce((a, d) => a + d.avg * (d.zone ? 1.3 : 1) * (d.steal ? 1.1 : 1), 0) / Math.max(1, +(t.match(/^(\d+)\s/)?.[1] ?? 1))
+    + (learned?.n ? 3 * (learned.floors / learned.n) : 0);
+};
+const abyssKey = (raw) => (raw.split('\n').map((l) => l.trim()).find((l) => l.length > 2 && !/^\d+$/.test(l)) ?? raw).slice(0, 40); // nom du sort ou de la carte
 if (process.argv[2] === 'test') {
   const assert = (await import('node:assert')).strict;
   S.learn = {}; S.level = 100; S.zone = null; // tests independants de ce que le bot a appris (state.json)
@@ -991,6 +1012,8 @@ if (process.argv[2] === 'test') {
     assert.ok(cardValue(parseCard('3 X 20 à 22 dommages Air'), st0) > 2 * cardValue(parseCard('3 Y 20 à 22 dommages Feu'), st0)); [S.learn, S.zone] = saved; }
   { const saved = [S.learn, S.level]; S.level = 120; S.learn = { build: { minHp: 0.9, loss: 0, n: 20 } }; assert.ok(wisdomShareNow() > CFG.wisShare);
     S.learn = { build: { minHp: 0.3, loss: 0.2, n: 20 } }; assert.equal(wisdomShareNow(), 0); S.level = 200; S.learn = {}; assert.equal(wisdomShareNow(), 0); [S.learn, S.level] = saved; }
+  { const sv = S.abyssRun; S.abyssRun = { start: Date.now(), bonus: { Chance: 20 } }; assert.equal(abyssStats().Chance, 120); assert.equal(abyssStats().Force, 100);
+    assert.ok(abyssValue('Legendaire\n+1 PA') > abyssValue('Epique\n+10 % Critique')); S.abyssRun = sv; }
   const it = { fav: false, rarity: 'COMMUN', name: 'Coiffe Bouftou', partial: false };
   assert.deepEqual([canSell(it), canSell({ ...it, rarity: 'RARE' }), canSell({ ...it, name: 'Coiffe Bouftou · Tiers 2' }), canSell({ ...it, name: 'Gelano' }), canSell({ ...it, partial: true }), canSell({ ...it, fav: true }), canSell({ ...it, name: 'Coiffe Bouftou · Rayonnant' })], [true, false, false, false, false, false, false]);
   setEnergy(0, 200); S.energyAt -= 2.5 * REGEN; assert.equal(energyNow(), 2);
@@ -1402,7 +1425,7 @@ async function startAbyss(page) {
   if (have < 20 + CFG.energyReserve) { decide(`Abysses : ${have} energie, il en faut 20 (+ reserve ${CFG.energyReserve})`); return false; }
   page.once('dialog', (dg) => dg.accept().catch(() => {}));
   await go.click();
-  S.last.abysses = Date.now(); S.abyssRun = { start: Date.now(), floors: 0 };
+  S.last.abysses = Date.now(); S.abyssRun = { start: Date.now(), floors: 0, bonus: {}, picks: [] };
   decide('Abysses : descente lancee (20 energie), choix et combats en manuel');
   log('ABYSSES descente lancee');
   return true;
@@ -1411,6 +1434,8 @@ async function abyssChoice(page, text) {
   const inRun = S.abyssRun && Date.now() - S.abyssRun.start < 3 * 3600000;
   if (!/\/abysses/i.test(page.url()) && !(inRun && /carte bonus|Choisis|choisir|nouveau sort|Étage \d+/i.test(text))) return false; // le menu contient "Abysses" sur toutes les pages
   if (/À toi de jouer|Tour de /.test(text)) return false; // combat : playTurn s'en charge
+  const run = text.match(/DESCENTE EN COURS\s*\n\s*(\d+)\s*\/\s*100/);
+  if (run) { if (!S.abyssRun) { S.abyssRun = { start: Date.now(), floors: +run[1] - 1, bonus: {}, picks: [] }; log(`ABYSSES descente en cours reprise (etage ${run[1]})`); } S.abyssRun.floor = +run[1]; S.abyssRun.start = Date.now(); }
   const btns = page.locator('main').locator('button:visible');
   const items = await btns.evaluateAll((els) => els.map((e, i) => ({ i, raw: e.innerText, t: e.innerText.replace(/\s+/g, ' ').trim(), dis: e.disabled }))).catch(() => []);
   const mainTxt = await page.locator('main').innerText().catch(() => text);
@@ -1424,8 +1449,12 @@ async function abyssChoice(page, text) {
     + cardFx(x.raw.split('\n')).dmg.reduce((a, d) => a + d.avg * (d.zone ? 1.3 : 1) * (d.steal ? 1.1 : 1), 0) / Math.max(1, +(x.t.match(/^(\d+)\s/)?.[1] ?? 1));
   const cands = items.filter((x) => !x.dis && x.t.length > 12 && !/Fuir|Auto|Fin du tour|Déconnexion|Descendre|Classement|Ouvrir|Équiper|Vendre|Briser|Fusionner|Acheter|Retour/i.test(x.t) && /L[ée]gendaire|[ÉE]pique|\bRare\b|dommages|vol de vie|Soigne|Bouclier|\+\d+/i.test(x.t));
   if (cands.length >= 2) { // ecran de choix (sort ou carte bonus)
-    const best = [...cands].sort((a, b) => value(b) - value(a))[0];
-    decide(`Abysses : je choisis "${best.t.slice(0, 70)}" parmi ${cands.length} (rarete, PA/PM, degats)`);
+    const best = [...cands].sort((a, b) => abyssValue(b.raw) - abyssValue(a.raw))[0];
+    if (S.abyssRun) {
+      S.abyssRun.picks.push(abyssKey(best.raw));
+      for (const m of best.t.matchAll(/\+(\d+) (Force|Intelligence|Chance|Agilité|Puissance)/g)) S.abyssRun.bonus[m[2]] = (S.abyssRun.bonus[m[2]] ?? 0) + +m[1]; // cartes Rare
+    }
+    decide(`Abysses : je choisis "${best.t.slice(0, 70)}" parmi ${cands.length} (PA d'abord, critique, degats, appris)`);
     log(`ABYSSES choix ${best.t.slice(0, 70)}`);
     await btns.nth(best.i).click({ timeout: 5000 }).catch(() => {});
     await sleep(800);
@@ -1433,8 +1462,8 @@ async function abyssChoice(page, text) {
     if (await ok.isVisible().catch(() => false)) await ok.click().catch(() => {});
     return true;
   }
-  const next = page.locator('main').locator('button, a').filter({ hasText: /^\s*(Étage suivant|Continuer la descente|Plonger|Étage \d+)/ }).first();
-  if (await next.isVisible().catch(() => false)) { await next.click().catch(() => {}); log('ABYSSES etage suivant'); return true; }
+  const next = page.locator('main').locator('button, a').filter({ hasText: /^\s*(Combattre l.étage \d+|Étage suivant|Continuer la descente|Reprendre la descente|Plonger)/i }).first(); // bouton reel : "Combattre l'etage N" (jamais "Abandonner")
+  if (await next.isEnabled().catch(() => false)) { const lbl = (await next.innerText().catch(() => '')).trim(); await next.click().catch(() => {}); log(`ABYSSES ${lbl}`); decide(`Abysses : ${lbl}`); return true; }
   return false;
 }
 // Actions du tableau de bord : executees des que le bot n'est pas en plein combat ; resultat garde par bouton (S.actRes)
@@ -1673,7 +1702,7 @@ while (true) {
     if (fightMem.profile) { rewardProfile(fightMem.profile, win, fightMem.turn); const p = S.learn.prof[fightMem.profile]; decide(`Style ${fightMem.profile} : ${win ? 'victoire' : 'defaite'} en ${fightMem.turn} tours (${p.w}/${p.n} gagnes)`); fightMem = { turn: 0, endHp: null, inc: 0, profile: null }; }
     if (fight === 'boss') S.boss = { ...S.boss, live: false, last: win ? 'victoire' : 'defaite' };
     if (fight === 'arene') S.arena = { ...S.arena, last: win ? 'victoire' : 'defaite' };
-    if (fight === 'abysses') { if (win && S.abyssRun) S.abyssRun.floors++; else if (!win) { log(`ABYSSES fin de descente (${S.abyssRun?.floors ?? '?'} etages)`); decide(`Abysses : descente terminee apres ${S.abyssRun?.floors ?? '?'} etages`); (S.learn ??= {}).abyssBest = Math.max(S.learn.abyssBest ?? 0, S.abyssRun?.floors ?? 0); S.abyssRun = null; } }
+    if (fight === 'abysses') { if (win && S.abyssRun) S.abyssRun.floors++; else if (!win) { log(`ABYSSES fin de descente (${S.abyssRun?.floors ?? '?'} etages)`); decide(`Abysses : descente terminee apres ${S.abyssRun?.floors ?? '?'} etages`); (S.learn ??= {}).abyssBest = Math.max(S.learn.abyssBest ?? 0, S.abyssRun?.floors ?? 0); for (const k of new Set(S.abyssRun?.picks ?? [])) { const p = ((S.learn.abyssPicks ??= {})[k] ??= { n: 0, floors: 0 }); p.n++; p.floors += S.abyssRun?.floors ?? 0; } S.abyssRun = null; } }
     if (fight === 'arene' && !win && S.arenaFoe) { ((S.learn ??= {}).arenaAvoid ??= {})[S.arenaFoe] = { lvl: S.level, deck: deckKey() }; decide(`Arene : ${S.arenaFoe} m'a battu ou bloque, je l'evite jusqu'a +3 niveaux ou un nouveau deck`); }
     S.mode = fight ?? (adventure ? 'aventure' : 'chasse');
     fight = null;
