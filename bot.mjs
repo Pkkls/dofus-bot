@@ -481,8 +481,8 @@ async function allocateStats(page) {
   }
   // Compromis XP / degats a la marge : XP/min ~ (1 + Sag/100) x (1 + (stat + Puissance)/100).
   // Un point de Sagesse vaut 1/(100+Sag)/coutSag, un point de stat 1/(100+stat+Pui)/coutStat : on vise l'egalite, frein selon le danger (wis)
-  const wisCost = +(body.match(/\nSagesse\n[^\n]+\n(\d+) pt/)?.[1] ?? 3);
-  const mainCost = +(body.match(new RegExp(`\\n${main}\\n[^\\n]+\\n(\\d+) pt`))?.[1] ?? 3);
+  const wisCost = +(body.match(/(\d+) points? = \+1 Sagesse/)?.[1] ?? body.match(/\nSagesse\n[^\n]+\n(\d+) pt/)?.[1] ?? 3);
+  const mainCost = +(body.match(new RegExp(`(\\d+) points? = \\+1 ${main}`))?.[1] ?? body.match(new RegExp(`\\n${main}\\n[^\\n]+\\n(\\d+) pt`))?.[1] ?? 3);
   const sag = +(body.match(/\nSagesse\n(\d+)/)?.[1] ?? 0), mainVal = +(body.match(new RegExp(`\\n${main}\\n(\\d+)`))?.[1] ?? 0), pui = +(body.match(/(\d+)\nPUISSANCE/)?.[1] ?? S.stats?.Puissance ?? 0); // lue sur la fiche (le cache S.stats peut etre vide)
   const L = (S.learn ??= {});
   const gate = CFG.wisShare > 0 ? wis / CFG.wisShare : 0; // 0 danger, 0.5 tendu, 1 normal, 1.5 confortable
@@ -494,12 +494,19 @@ async function allocateStats(page) {
   (L.wisLog ??= []).unshift({ t: Date.now(), lvl: S.level, sag, add: wantWis, xpf: Math.round(L.xpf ?? 0), loss: S.learn?.build?.loss ?? null }); L.wisLog.length = Math.min(L.wisLog.length, 20); // validation
   for (const [stat, want] of [['Vitalité', Math.floor(total * vit)], ['Sagesse', wantWis], [main, Infinity]]) { // Vitalite d'abord : 1 pt fixe, la stat principale a des paliers
     if (!(await pts())) break; // les paliers de cout peuvent tout consommer sur la stat principale
-    const input = page.getByLabel(`Points à ajouter en ${stat}`);
-    const max = +((await input.locator('xpath=following::button[starts-with(normalize-space(), "max")][1]').innerText()).match(/\d+/)?.[0] ?? 0);
+    const k = ['Vitalité', 'Sagesse', 'Force', 'Intelligence', 'Chance', 'Agilité'].indexOf(stat);
+    const old = page.getByLabel(`Points à ajouter en ${stat}`);
+    const oldUi = await old.count() > 0;
+    const maxBtn = oldUi ? old.locator('xpath=following::button[starts-with(normalize-space(), "max")][1]') : page.locator('main').getByRole('button', { name: /^max \d+/ }).nth(k);
+    const max = +((await maxBtn.innerText({ timeout: 10000 })).match(/\d+/)?.[0] ?? 0);
     const n = Math.min(want, max);
     if (n <= 0) continue;
-    await input.fill(String(n));
-    await input.locator('xpath=following::button[normalize-space()="Ajouter"][1]').click();
+    if (oldUi) { await old.fill(String(n)); await old.locator('xpath=following::button[normalize-space()="Ajouter"][1]').click(); }
+    else {
+      if (n >= max) await maxBtn.click(); // "max" prepare tout le possible
+      else { const plus = page.locator('main').getByRole('button', { name: /^\+1$/ }).nth(k); for (let j = 0; j < n; j++) { await plus.click(); await sleep(80); } } // "+1" n fois
+      await page.locator('main').getByRole('button', { name: /^Ajouter$/ }).nth(k).click();
+    }
     await sleep(1500);
     log(`CARAC +${n} ${stat}`);
   }
