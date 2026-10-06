@@ -92,3 +92,7 @@ A chaque defaite : ecran complet dans `dump/defaite-<ts>.txt`, ligne d'indice au
 ## Prestige (06/10)
 
 Le jeu permet un prestige : retour niveau 1, sorts et inventaire perdus, un objet garde (+25 % dommages). Prestige fait le 06/10 a 13h, objet garde : Mollosk (dans NEVER_SELL). Le bot detecte une chute de niveau > 5 : zone, compteurs, anneaux connus et stats remis a zero, passe de gestion, aventure depuis le debut. Garde-fou : un lien de zone plus de 20 niveaux au-dessus du perso est ignore hors entrainement (niveaux des zones lus une fois par lancement, `allZones`).
+
+## Ecran d'inactivite (06/10)
+
+"Tu etais inactif, ta place a ete liberee, progression sauvegardee" (10 min sans clic) n'est pas le test de presence : le bot attend `gate()` (energie, plage horaire) puis recharge /combat pour reprendre sa place, sans cliquer dans l'ecran. Le test de presence "Es-tu toujours la ?" reste manuel (alerte, jamais clique).
