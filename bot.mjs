@@ -478,9 +478,15 @@ const PROFILES = {
   equilibre: { heal: [2.5, 1.2, 0.3], shield: 1.2, kill: 3 },
   agressif: { heal: [1.5, 0.6, 0.1], shield: 0.6, kill: 4 },
   prudent: { heal: [3.5, 2, 0.6], shield: 1.6, kill: 2 },
-  antipat: { heal: [1.2, 0.1, 0], shield: 0.1, kill: 6 }, // pas choisi par UCB : impose quand le combat tourne en rond
 };
-const STYLES = ['equilibre', 'agressif', 'prudent']; // styles explores par UCB (antipat est impose, pas choisi)
+const STYLES = ['equilibre', 'agressif', 'prudent']; // styles explores par UCB
+// hypotheses de deblocage d'un pat (essayees dans l'ordre, la meilleure connue d'abord) ; focus = ennemi impose aux cartes mono-cible
+const STALL_HYPOS = [
+  { name: 'tout aux degats', P: { heal: [1.2, 0.1, 0], shield: 0.1, kill: 6 } },
+  { name: 'focus le plus entame', P: { heal: [1.2, 0.1, 0], shield: 0.1, kill: 8 }, focus: (st) => st.enemies.filter((e) => e.hp > 0).sort((a, b) => (a.hp + a.prot) / a.max - (b.hp + b.prot) / b.max)[0]?.i },
+  { name: 'focus le moins resistant', P: { heal: [1.2, 0.1, 0], shield: 0.1, kill: 6 }, focus: (st) => st.enemies.filter((e) => e.hp > 0).sort((a, b) => Object.values(a.res).reduce((x, y) => x + y, 0) - Object.values(b.res).reduce((x, y) => x + y, 0))[0]?.i },
+  { name: 'aucun soin ni bouclier', P: { heal: [0, 0, 0], shield: 0, kill: 8 } },
+];
 const pickProfile = () => {
   const L = (S.learn ??= {}).prof ??= {};
   const n = Object.values(L).reduce((a, p) => a + p.n, 0);
@@ -558,7 +564,7 @@ const planValue = (cards, st, focus, inc, s, P = PROFILES.equilibre, last = null
   return v;
 };
 // meilleur plan : sous-ensembles de la main payables avec les PA (arme 1 fois/tour), x focus ; renvoie la carte a jouer en premier
-const bestMove = (st, inc, s, weaponUsed, blocked, P) => {
+const bestMove = (st, inc, s, weaponUsed, blocked, P, forceFocus = null) => {
   const hand = st.hand.filter((c) => !c.off && c.cost <= st.pa && !(c.weapon && weaponUsed) && !blocked.has(c.name)).map((c) => ({ ...c, fx: cardFx(c.lines) }));
   const alive = st.enemies.filter((e) => e.hp > 0);
   let best = { v: 0 };
@@ -566,7 +572,7 @@ const bestMove = (st, inc, s, weaponUsed, blocked, P) => {
     const cards = hand.filter((_, k) => mask & (1 << k));
     if (cards.reduce((a, c) => a + c.cost, 0) > st.pa) continue;
     const seq = orderCards(cards, st, fightMem.lastElem);
-    for (const e of alive) { const v = planValue(seq, st, e.i, inc, s, P, fightMem.lastElem); if (v > best.v + 1e-6) best = { v, cards: seq, focus: e }; }
+    for (const e of forceFocus == null ? alive : alive.filter((x) => x.i === forceFocus)) { const v = planValue(seq, st, e.i, inc, s, P, fightMem.lastElem); if (v > best.v + 1e-6) best = { v, cards: seq, focus: e }; }
   }
   if (!best.cards) return null;
   const first = best.cards[0]; // deja ordonne par orderCards
@@ -593,28 +599,44 @@ async function playTurn(page) {
   if (ruled.length && !fightMem.ruleSaid) { fightMem.ruleSaid = true; decide(`Mecanique ${ruled.join(', ')} (indice) : j'alterne les elements, jamais deux fois le meme de suite`); }
   fightMem.turn = st.turn;
   S.fightNow = { profile: fightMem.profile, turn: st.turn, foes: st.enemies.filter((e) => e.hp > 0).map((e) => e.name), at: Date.now() }; // tableau de bord
-  // pat (soins/boucliers des deux cotes) : des le tour 8, PV+protection ennemis baisses de moins de 5 % en 4 tours -> tout aux degats
+  // Pat : les PV+protection ennemis ne baissent plus (mesure sur les derniers tours). Le bot teste des hypotheses (STALL_HYPOS), 2 tours chacune,
+  // garde celle qui fait baisser les PV ennemis et retient par groupe d'ennemis ce qui marche (S.learn.stall). Fuite seulement si toutes echouent.
   const ehpNow = st.enemies.reduce((a, e) => a + e.hp + e.prot, 0);
+  const foeKey = st.enemies.map((e) => e.name).sort().join(' + ');
+  const SL = (((S.learn ??= {}).stall ??= {})[foeKey] ??= {});
   if (fightMem.ehpTurn !== st.turn) { (fightMem.ehpHist ??= []).push(ehpNow); fightMem.ehpTurn = st.turn; }
   const hist = fightMem.ehpHist ?? [];
-  if (!fightMem.stall && st.turn >= 8 && hist.length >= 5 && ehpNow > 0.95 * hist[hist.length - 5]) {
-    fightMem.stall = true;
-    decide(`Pat detecte au tour ${st.turn} (PV ennemis ${Math.round(ehpNow)}, il y a 4 tours ${Math.round(hist[hist.length - 5])}) : je passe tout aux degats concentres`);
-    log(`COMBAT pat tour ${st.turn} - style anti-pat`);
-    fightMem.stallTurn = st.turn; fightMem.stallEhp = ehpNow;
+  const known = STALL_HYPOS.map((x, k) => [k, SL[x.name]]).filter(([, r]) => r?.ok > 0).sort((a, b) => b[1].ok - a[1].ok)[0];
+  if (!fightMem.stall && known && st.turn === 1) { fightMem.stall = true; fightMem.hyp = known[0]; fightMem.hypTurn = 1; fightMem.hypEhp = ehpNow; fightMem.tried = new Set([known[0]]); decide(`Contre ${foeKey} : je reprends l'hypothese qui avait marche (${STALL_HYPOS[known[0]].name})`); }
+  if (!fightMem.stall && hist.length >= 4 && ehpNow > 0.95 * hist[hist.length - 4]) { // 3 tours sans entamer l'adversaire
+    fightMem.stall = true; fightMem.hyp = 0; fightMem.hypTurn = st.turn; fightMem.hypEhp = ehpNow; fightMem.tried = new Set([0]);
+    decide(`Pat detecte au tour ${st.turn} (PV ennemis ${Math.round(ehpNow)}, 3 tours avant ${Math.round(hist[hist.length - 4])}) : j'essaie "${STALL_HYPOS[0].name}"`);
+    log(`COMBAT pat tour ${st.turn} - hypothese ${STALL_HYPOS[0].name}`);
   }
-  // dernier recours : 10 tours d'anti-pat sans entamer l'adversaire (il se soigne plus vite qu'on ne tape) -> fuite
-  if (fightMem.stall && st.turn - fightMem.stallTurn >= 10 && ehpNow > 0.9 * fightMem.stallEhp) {
-    decide(`Pat sans issue : 10 tours d'anti-pat et l'adversaire est toujours a ${Math.round(ehpNow)} PV, je fuis pour ne plus perdre de temps`);
-    log(`COMBAT pat sans issue tour ${st.turn} - fuite`);
-    page.once('dialog', (dg) => dg.accept().catch(() => {}));
-    await page.getByRole('button', { name: 'Fuir', exact: true }).click({ timeout: 5000 }).catch(() => {});
-    await sleep(1500);
-    const ok = page.getByRole('button', { name: /^(Confirmer|Oui|Abandonner)/ }).last();
-    if (await ok.isVisible().catch(() => false)) await ok.click().catch(() => {});
-    return true;
+  if (fightMem.stall && st.turn - fightMem.hypTurn >= 2) { // bilan de l'hypothese en cours
+    const H = STALL_HYPOS[fightMem.hyp], r = (SL[H.name] ??= { ok: 0, ko: 0 });
+    if (ehpNow < 0.95 * fightMem.hypEhp) { r.ok++; fightMem.hypTurn = st.turn; fightMem.hypEhp = ehpNow; } // ca avance : on garde
+    else {
+      r.ko++;
+      const next = STALL_HYPOS.findIndex((x, k) => !fightMem.tried.has(k));
+      if (next < 0) { // tout essaye sans progres : fuite, et adversaire evite jusqu'a ce que le perso evolue
+        decide(`Pat sans issue contre ${foeKey} : ${STALL_HYPOS.length} hypotheses essayees sans entamer l'adversaire, je fuis`);
+        log(`COMBAT pat sans issue tour ${st.turn} - fuite`);
+        page.once('dialog', (dg) => dg.accept().catch(() => {}));
+        await page.getByRole('button', { name: 'Fuir', exact: true }).click({ timeout: 5000 }).catch(() => {});
+        await sleep(1500);
+        const ok = page.getByRole('button', { name: /^(Confirmer|Oui|Abandonner)/ }).last();
+        if (await ok.isVisible().catch(() => false)) await ok.click().catch(() => {});
+        return true;
+      }
+      fightMem.hyp = next; fightMem.tried.add(next); fightMem.hypTurn = st.turn; fightMem.hypEhp = ehpNow;
+      decide(`Pat : "${H.name}" n'entame pas l'adversaire, j'essaie "${STALL_HYPOS[next].name}"`);
+      log(`COMBAT pat - hypothese ${STALL_HYPOS[next].name}`);
+    }
   }
-  const P = fightMem.stall ? PROFILES.antipat : PROFILES[fightMem.profile];
+  const HYP = fightMem.stall ? STALL_HYPOS[fightMem.hyp] : null;
+  const P = HYP ? HYP.P : PROFILES[fightMem.profile];
+  const forceFocus = HYP?.focus ? HYP.focus(st) : null;
   if (fightMem.incTurn !== st.turn) { // une seule estimation par tour, meme si le tour est joue en plusieurs appels
     const lost = fightMem.endHp == null ? 0 : Math.max(0, fightMem.endHp - (st.hp + st.shield));
     const alive0 = st.enemies.filter((e) => e.hp > 0).length;
@@ -635,7 +657,7 @@ async function playTurn(page) {
   };
   st = await settle(st);
   while (plays < 15) {
-    const mv = bestMove(st, fightMem.inc, s, weaponUsed, blocked, P);
+    const mv = bestMove(st, fightMem.inc, s, weaponUsed, blocked, P, forceFocus);
     if (!mv) break;
     if (mv.single && st.target !== mv.focus.name) {
       // ciblage : delai court, un ennemi momentanement desactive (animation) ne doit pas faire tomber le tour en Auto
