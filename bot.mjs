@@ -552,6 +552,7 @@ async function playTurn(page) {
   if (hurt.length && !fightMem.hurtSaid) { fightMem.hurtSaid = true; decide(`Mecanique ${hurt.join(', ')} (indice) : plus aucun soin ni vol de vie a partir de ce tour`); }
   if (ruled.length && !fightMem.ruleSaid) { fightMem.ruleSaid = true; decide(`Mecanique ${ruled.join(', ')} (indice) : j'alterne les elements, jamais deux fois le meme de suite`); }
   fightMem.turn = st.turn;
+  S.fightNow = { profile: fightMem.profile, turn: st.turn, foes: st.enemies.filter((e) => e.hp > 0).map((e) => e.name), at: Date.now() }; // tableau de bord
   const P = PROFILES[fightMem.profile];
   if (fightMem.incTurn !== st.turn) { // une seule estimation par tour, meme si le tour est joue en plusieurs appels
     const lost = fightMem.endHp == null ? 0 : Math.max(0, fightMem.endHp - (st.hp + st.shield));
@@ -1160,6 +1161,7 @@ while (true) {
       if (CFG.climbWins) {
         climbHist.push(win); if (climbHist.length > 20) climbHist.shift();
         const rate = climbHist.filter(Boolean).length / climbHist.length;
+        S.climb = { rate, n: climbHist.length }; // tableau de bord
         if (++climbStreak >= CFG.climbWins && climbHist.length >= CFG.climbWins) {
           if (rate > CFG.targetWin) { climbDir = 1; climbStreak = 0; climbHist = []; }
           else if (rate < CFG.targetWin - 0.1) { climbDir = -1; climbStreak = 0; climbHist = []; }
@@ -1315,9 +1317,16 @@ while (true) {
       throwChecked = true;
       if (Math.random() < CFG.loseRate) {
         await sleep(rand(CFG.thinkMin, CFG.thinkMax));
+        const dialogs = [];
+        const onDialog = (dg) => { dialogs.push(dg.message()); dg.accept().catch(() => {}); }; // confirmation native : Playwright la refuse par defaut
+        page.on('dialog', onDialog);
         await page.getByRole('button', { name: 'Fuir', exact: true }).click().catch(() => {});
-        const ok = page.getByRole('button', { name: /^(Confirmer|Oui|Abandonner|Fuir)/ }).last();
-        if (await ok.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) await ok.click().catch(() => {});
+        await sleep(1500);
+        const ok = page.getByRole('button', { name: /^(Confirmer|Oui|Abandonner)/ }).last();
+        if (await ok.isVisible().catch(() => false)) await ok.click().catch(() => {});
+        await sleep(1500);
+        page.off('dialog', onDialog);
+        writeFileSync('dump/fuir.txt', `dialogues: ${dialogs.join(' | ') || 'aucun'}\nboutons: ${await page.locator('button:visible').allInnerTexts().then((a) => a.map((t) => t.replace(/\s+/g, ' ')).join(' | ')).catch(() => '')}\n\n${(await page.locator('body').innerText().catch(() => '')).slice(0, 1500)}`);
         fight = 'abandon';
         decide(`Defaite volontaire (${Math.round(CFG.loseRate * 100)} % des combats) : je fuis ce combat`);
         log('ABANDON volontaire - fuite');

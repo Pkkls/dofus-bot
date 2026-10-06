@@ -338,6 +338,24 @@ details[open].card > summary .chev { transform: rotate(180deg); }
         </div>
       </section>
 
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-brain"/></svg>Moteur de combat<span class="aside" id="m-mode"></span></h2>
+        <div class="card-b"><dl class="kv">
+          <dt>Combat en cours</dt><dd id="m-now">-</dd>
+          <dt>Victoires chasse (20 derniers)</dt><dd id="m-rate" class="num">-</dd>
+          <dt>Zone</dt><dd id="m-zone">-</dd>
+          <dt>Rythme</dt><dd id="m-pace">-</dd>
+          <dt>HDV</dt><dd id="m-hdv">-</dd>
+        </dl>
+          <div class="muted" style="margin:12px 0 6px">Styles appris (victoires, recompense moyenne)</div>
+          <div class="cards" id="m-prof"></div>
+          <div class="muted" style="margin:12px 0 6px">Correctif de degats appris (reel / prevu)</div>
+          <div class="elegend" id="m-k"></div>
+          <div class="muted" style="margin:12px 0 6px">Indices de defaite connus</div>
+          <div id="m-hints" class="muted">aucun</div>
+        </div>
+      </section>
+
       <section class="card" id="netcard">
         <h2 class="card-h"><svg class="i"><use href="#i-wifi"/></svg>Reseau vers le serveur<span class="aside">derniere minute</span></h2>
         <div class="card-b">
@@ -373,6 +391,11 @@ details[open].card > summary .chev { transform: rotate(180deg); }
   </main>
 
   <aside class="col side">
+    <section class="card decisions">
+      <h2 class="card-h"><svg class="i"><use href="#i-swords"/></svg>Tours de combat<span class="aside" id="t-count"></span></h2>
+      <div class="list" id="turns" style="height:28vh;min-height:200px"></div>
+    </section>
+
     <section class="card decisions">
       <h2 class="card-h"><svg class="i"><use href="#i-brain"/></svg>Decisions<span class="aside"><span class="live"><span class="dot"></span>en direct</span></span></h2>
       <div class="list" id="decisions"></div>
@@ -542,7 +565,7 @@ function renderNet(n, cap) {
 $('netchip').onclick = () => $('netcard').scrollIntoView({ behavior: 'smooth', block: 'center' });
 
 /* ---------- rendu principal ---------- */
-const renderDecisions = { key: '' };
+const renderDecisions = { key: '' }, renderTurns = { key: '' };
 function render(d) {
   const { S, stats: st, CFG, now } = d;
   renderNet(d.net, CFG.maxReqPerMin);
@@ -611,6 +634,26 @@ function render(d) {
     const deck = [...S.deck].sort((a, z) => (z.value || -1) - (a.value || -1));
     $('cards').innerHTML = deck.map((c) => `<div class="cardx" title="${esc(c.name)}"><span class="cost">${c.cost}</span><span class="n">${c.elem ? `<i class="edot" style="background:${ELEM[c.elem]}"></i>` : ''}${esc(c.name)}</span><span class="m num">${c.elem ? c.value + ' /PA' : 'utilitaire'}</span></div>`).join('');
   }
+
+  // moteur de combat
+  const L = S.learn ?? {}, prof = L.prof ?? {}, pct = (x) => Math.round(x * 100) + ' %';
+  $('m-mode').textContent = CFG.manualFight ? 'manuel' : 'auto du jeu';
+  const fn = S.fightNow;
+  $('m-now').textContent = fn && now - fn.at < 120000 ? `tour ${fn.turn}, style ${fn.profile}${fn.foes?.length ? ' vs ' + fn.foes.join(', ') : ''}` : 'aucun';
+  $('m-rate').textContent = S.climb?.n ? `${pct(S.climb.rate)} sur ${S.climb.n}, cible ${pct(CFG.targetWin)}` : `cible ${pct(CFG.targetWin)}`;
+  $('m-zone').textContent = S.zone ? S.zone.replace('/chasse?zone=', 'zone ') : '-';
+  $('m-pace').textContent = `${(CFG.thinkMin / 1000).toFixed(1)}-${(CFG.thinkMax / 1000).toFixed(1)} s/carte, ${CFG.gapMin}-${CFG.gapMax} s entre combats, pause ${pct(CFG.breakChance)}, fuite ${pct(CFG.loseRate)}`;
+  $('m-hdv').textContent = S.hdvBrokenUntil > now ? `achat en panne cote site, essai vers ${hm(S.hdvBrokenUntil)}` : 'actif';
+  const pk = Object.entries(prof).sort((a, z) => z[1].r / z[1].n - a[1].r / a[1].n);
+  $('m-prof').innerHTML = pk.map(([k, p], i) => `<div class="cardx"><span class="cost">${i + 1}</span><span class="n">${esc(k)}${L.train?.[k] ? ` <span class="muted">· entrainement ${(L.train[k].turns / L.train[k].n).toFixed(1)} tours</span>` : ''}</span><span class="m num">${p.w}/${p.n} · ${(p.r / p.n).toFixed(2)}</span></div>`).join('') || '<div class="empty" style="padding:0">Apres les premiers combats manuels.</div>';
+  $('m-k').innerHTML = Object.entries(L.k ?? {}).map(([e, v]) => `<span><i class="edot" style="background:${ELEM[e]}"></i>${e} x${v.toFixed(2)}</span>`).join('') || 'en cours d\'apprentissage';
+  const hints = Object.entries(S.hints ?? {}).filter(([, v]) => /Indice/i.test(v.hint));
+  $('m-hints').innerHTML = hints.length ? hints.map(([k, v]) => `<div><b>${esc(k)}</b> : ${esc(v.hint.replace(/^Indice\s*:\s*/i, ''))}</div>`).join('') : 'aucun';
+  // fil des tours de combat (decisions du moteur seulement)
+  const turns = (S.decisions ?? []).filter((x) => /^(Tour \d+ manuel|Style |Mecanique|Entrainement|Defaite volontaire|Pause aleatoire|Zone (montee|descente)|Defaite contre)/.test(x.m));
+  $('t-count').textContent = turns.length ? `${turns.length} recents` : '';
+  const tk = turns.length + ':' + (turns[0]?.t ?? 0);
+  if (tk !== renderTurns.key) { renderTurns.key = tk; $('turns').innerHTML = turns.map((x) => `<div class="dec"><span class="t num">${hms(x.t)}</span><span class="x">${esc(x.m)}</span></div>`).join('') || '<div class="empty">Les tours joues par le moteur apparaissent ici.</div>'; }
 
   // decisions (la plus recente en haut, surlignee) ; DOM reecrit seulement si nouvelle decision
   const dk = (S.decisions?.[0]?.t ?? 0) + ':' + (S.decisions?.[0]?.n ?? 1) + ':' + (S.decisions?.length ?? 0);
