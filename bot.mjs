@@ -815,26 +815,39 @@ const pickGroup = (txt, maxRank) => {
 };
 
 // zone d'entrainement : dans "Toutes les zones", celle dont le niveau max est le plus proche de CFG.trainLevel
-// toutes les zones [href, niveau max, nom] triees par niveau max ; lues une fois par lancement
-let ZONES = null;
+// toutes les zones [href, niveau max, nom] triees par niveau max. /chasse ne montre que les zones autour de mon
+// niveau : relue des que j'ai pris 5 niveaux (ou perdu, prestige), et cumulee avec ce qui etait deja connu
+let ZONES = null, zonesLvl = 0;
 async function allZones(page) {
-  if (ZONES?.length) return ZONES;
+  if (ZONES?.length && Math.abs((S.level ?? 0) - zonesLvl) < 5) return ZONES;
   await page.goto(BASE + '/chasse');
   await page.locator('a[href^="/chasse?zone="]').first().waitFor({ timeout: 20000 });
   if ((await page.locator('a[href^="/chasse?zone="]').count()) < 20) { await page.getByRole('link', { name: /Toutes les zones/ }).click({ timeout: 5000 }).catch(() => {}); await sleep(2500); } // ancienne interface : page a part
   const seen = new Set();
-  ZONES = (await page.locator('a[href^="/chasse?zone="]').evaluateAll((els) => els.map((e) => [e.getAttribute('href'), e.innerText])))
-    .filter(([h]) => !seen.has(h) && seen.add(h)).map(([h, t]) => { const r = zoneRange(t); return [h, r?.[1] ?? 0, t.split('\n')[0], r?.[0] ?? 0]; }).filter(([, m]) => m).sort((a, b) => a[1] - b[1]); // [href, niv max, nom, niv min]
+  const fresh = (await page.locator('a[href^="/chasse?zone="]').evaluateAll((els) => els.map((e) => [e.getAttribute('href'), e.innerText])))
+    .filter(([h]) => !seen.has(h) && seen.add(h)).map(([h, t]) => { const r = zoneRange(t); return [h, r?.[1] ?? 0, t.split('\n')[0], r?.[0] ?? 0]; }).filter(([, m]) => m); // [href, niv max, nom, niv min]
+  const known = new Map((ZONES ?? []).map((z) => [z[0], z]));
+  for (const z of fresh) known.set(z[0], z);
+  ZONES = [...known.values()].sort((a, b) => a[1] - b[1]);
+  zonesLvl = S.level ?? 0;
   return ZONES;
 }
 // palier de zone suivant (dir 1) ou precedent (dir -1) par niveau max ; reste sur place en bout de liste
 async function climbZone(page, cur, dir, why) {
   const z = await allZones(page);
-  if (!S.queue.includes('deck')) S.queue.push('deck'); // nouvelles resistances : deck revu
+  const queueDeck = () => { if (!S.queue.includes('deck')) S.queue.push('deck'); }; // nouvelles resistances : deck revu (seulement si la zone change)
   if (xpHard && dir > 0) { // XP hard : par niveau MIN (plancher des monstres), saut croissant : mon niveau + 5 x victoires, et toujours au-dessus de la zone actuelle
     const curMin = z.find(([h]) => h === cur)?.[3] ?? 0;
     const target = Math.max(curMin + 5, S.level + 5 * xpHardWins);
     const next = [...z].sort((a, b) => a[3] - b[3]).find(([, , , mn]) => mn >= target) ?? [...z].sort((a, b) => b[3] - a[3])[0];
+    if (!next || next[0] === cur || next[3] <= curMin) { // plus rien de plus dur connu : sinon on reste coince a gagner sans fin dans une zone facile
+      xpHard = false; S.xpHard = false;
+      ((S.learn ??= {}).hard ??= { offset: 0, n: 0, lvl: 0 }).lvl = S.level; // pas de relance auto avant hardEvery niveaux
+      decide(`XP hard : aucune zone plus dure que ${z.find(([h]) => h === cur)?.[2] ?? cur} (monstres niv ${curMin}+) parmi ${z.length} connues, j'arrete et je reprends la montee normale`);
+      log(`XP HARD termine - plus de zone plus dure (plancher ${curMin}, moi ${S.level})`);
+      return cur;
+    }
+    queueDeck();
     decide(`XP hard : ${next[2]} (monstres niv ${next[3]}-${next[1]}, cible plancher ${target}, moi ${S.level})`);
     log(`ZONE montee XP hard ${next[2]} niv ${next[3]}-${next[1]}`);
     (S.xpHardLog ??= []).unshift({ t: Date.now(), name: next[2], href: next[0], min: next[3], max: next[1], lvl: S.level, res: null }); S.xpHardLog.length = Math.min(S.xpHardLog.length, 30);
@@ -843,6 +856,7 @@ async function climbZone(page, cur, dir, why) {
   const curMax = z.find(([h]) => h === cur)?.[1] ?? S.level;
   const next = dir > 0 ? z.find(([, m]) => m > curMax) : [...z].reverse().find(([, m]) => m < curMax);
   if (!next) { decide(`Zone : deja au ${dir > 0 ? 'plus haut' : 'plus bas'} palier (niveau max ${curMax})`); return cur; }
+  queueDeck();
   decide(`Zone ${dir > 0 ? 'montee' : 'descente'} : ${next[2]} (niveau max ${next[1]}, avant ${curMax}), ${why}`);
   log(`ZONE ${dir > 0 ? 'montee' : 'descente'} ${next[2]} niv ${next[1]}`);
   return next[0];
