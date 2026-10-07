@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import { appendFileSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
-import { adviseZone, pickBestMeasured } from './zone-advisor.mjs';
+import { adviseZone, pickBestMeasured, isCurrent } from './zone-advisor.mjs';
+import { choose, explain } from './llm.mjs';
 import { exec } from 'node:child_process';
 import http from 'node:http';
 import dns from 'node:dns/promises';
@@ -100,7 +101,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['passLog', 'zoneReq', 'ownScore', 'equipLog', 'hdvBought', 'rushAsc', 'ascBest', 'seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['llmLog', 'passLog', 'zoneReq', 'ownScore', 'equipLog', 'hdvBought', 'rushAsc', 'ascBest', 'seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -1445,6 +1446,15 @@ async function siteScan(page) {
   writeFileSync('dump/site-changes.txt', `${new Date().toISOString()} : ${changes.length} changement(s)\n` + changes.join('\n'));
   if (!changes.length) { decide(`Site mis a jour : rien de nouveau sur ${Object.keys(map).length} pages`); return; }
   log(`MAJ SITE ${changes.length} changement(s) : ${changes.join(' | ').slice(0, 600)}`);
+  void (async () => { // IA : a quoi servent les nouveautes (lecture seule, ne declenche rien)
+    for (const c of changes.slice(0, 3)) {
+      const p = c.match(/(\/[^\s]*)/)?.[1] ?? '/';
+      let text = '';
+      try { text = readFileSync(siteFile(p), 'utf8'); } catch {}
+      const a = await explain(c, text);
+      if (a) decide(`IA nouveaute ${c.slice(0, 80)} : ${a.purpose} (${a.readOnly ? 'lecture seule' : 'ACTION'}, ${a.useful ? 'utile' : 'pas utile'}) -> ${a.suggestion}`);
+    }
+  })();
   decide(`Mise a jour du site : ${changes.length} changement(s), detail dans dump/site-changes.txt : ${changes.slice(0, 4).join(' | ').slice(0, 400)}`);
   alert('mise a jour du site : nouveautes, voir dump/site-changes.txt');
 }
@@ -1614,6 +1624,28 @@ async function zoneReview(page) {
   } else {
     decide(`Check XP : ${here ? `${Math.round(here.xpPerMin)} XP/min ici` : 'zone pas encore mesuree'}, aucune zone debloquee plus dure a mesurer ni mieux mesuree a mon niveau : je reste`);
   }
+  void shadowZoneAdvice(facts, d, label);
+}
+// IA en mode ombre : le LLM local choisit parmi les memes options propres (zones ouvertes, mesures a mon niveau) ;
+// son avis est journalise a cote de la decision du moteur, sans rien changer. Sert a juger s'il peut decider seul.
+async function shadowZoneAdvice(facts, d, label) {
+  const lvl = facts.level, here = facts.measures[facts.currentZone];
+  const fmt = (m) => (isCurrent(m, lvl) ? `${Math.round(m.xpPerMin)} XP/min, ${Math.round(m.winRate * 100)} % victoires` : 'jamais mesuree a mon niveau');
+  const others = facts.zones.filter((z) => z.href !== facts.currentZone && !((facts.levelLocks[z.href] ?? 0) > lvl)
+    && (isCurrent(facts.measures[z.href], lvl) || z.minLevel >= (facts.zones.find((x) => x.href === facts.currentZone)?.minLevel ?? 0)))
+    .sort((a, b) => b.minLevel - a.minLevel).slice(0, 5);
+  const options = [{ id: 'A', label: `rester en ${label(facts.currentZone)} (${here ? fmt(here) : 'pas encore mesuree'})`, href: facts.currentZone },
+    ...others.map((z, i) => ({ id: String.fromCharCode(66 + i), label: `${z.name} (monstres ${z.minLevel}-${z.maxLevel}) : ${fmt(facts.measures[z.href])}`, href: z.href }))];
+  if (options.length < 2) return;
+  const t0 = Date.now();
+  const a = await choose(`Niveau ${lvl}. Quelle zone donne le plus d'XP par minute ?`, options);
+  if (!a) return;
+  const picked = options.find((o) => o.id === a.option);
+  const engine = d.action === 'stay' ? facts.currentZone : d.action === 'move' ? d.zone : d.zones[0];
+  const agree = d.action === 'probe' ? d.zones.includes(picked.href) : picked.href === engine;
+  (S.llmLog ??= []).unshift({ t: Date.now(), point: 'zone', lvl, engine: `${d.action} ${label(engine)}`, llm: label(picked.href), agree, conf: a.confidence, reason: a.reason, ms: Date.now() - t0 });
+  S.llmLog.length = Math.min(S.llmLog.length, 100);
+  decide(`IA (ombre) : ${agree ? "d'accord" : "PAS d'accord"} avec le moteur (${d.action}) -> ${label(picked.href)}, confiance ${Math.round(a.confidence * 100)} % : ${a.reason} [${Math.round((Date.now() - t0) / 1000)} s]`);
 }
 // fin de mesure (Spots ou check XP) : la meilleure XP/min mesuree a mon niveau qui tient le taux de victoire vise
 function pickSpot() {
