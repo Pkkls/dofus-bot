@@ -99,7 +99,7 @@ const netView = () => {
 const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(), stats: parseLog() });
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
-const KEEP = ['passLog', 'ownScore', 'equipLog', 'hdvBought', 'rushAsc', 'ascBest', 'seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
+const KEEP = ['passLog', 'zoneReq', 'ownScore', 'equipLog', 'hdvBought', 'rushAsc', 'ascBest', 'seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
@@ -822,7 +822,10 @@ async function allZones(page) {
   if (ZONES?.length && Math.abs((S.level ?? 0) - zonesLvl) < 5) return ZONES;
   await page.goto(BASE + '/chasse');
   await page.locator('a[href^="/chasse?zone="]').first().waitFor({ timeout: 20000 });
-  if ((await page.locator('a[href^="/chasse?zone="]').count()) < 20) { await page.getByRole('link', { name: /Toutes les zones/ }).click({ timeout: 5000 }).catch(() => {}); await sleep(2500); } // ancienne interface : page a part
+  // "Zones de mon niveau" est l'onglet par defaut : sans "Toutes les zones (222)" l'XP hard ne voit pas plus haut que ma tranche
+  const mine = await page.locator('a[href^="/chasse?zone="]').count();
+  await page.getByText(/Toutes les zones/).first().click({ timeout: 5000 }).catch(() => {});
+  await page.waitForFunction((n) => document.querySelectorAll('a[href^="/chasse?zone="]').length > n, mine, { timeout: 8000 }).catch(() => {});
   const seen = new Set();
   const fresh = (await page.locator('a[href^="/chasse?zone="]').evaluateAll((els) => els.map((e) => [e.getAttribute('href'), e.innerText])))
     .filter(([h]) => !seen.has(h) && seen.add(h)).map(([h, t]) => { const r = zoneRange(t); return [h, r?.[1] ?? 0, t.split('\n')[0], r?.[0] ?? 0]; }).filter(([, m]) => m); // [href, niv max, nom, niv min]
@@ -834,7 +837,7 @@ async function allZones(page) {
 }
 // palier de zone suivant (dir 1) ou precedent (dir -1) par niveau max ; reste sur place en bout de liste
 async function climbZone(page, cur, dir, why) {
-  const z = await allZones(page);
+  const z = (await allZones(page)).filter(([h]) => !((S.zoneReq?.[h] ?? 0) > S.level)); // sans les zones reservees a un niveau que je n'ai pas
   const queueDeck = () => { if (!S.queue.includes('deck')) S.queue.push('deck'); }; // nouvelles resistances : deck revu (seulement si la zone change)
   if (xpHard && dir > 0) { // XP hard : par niveau MIN (plancher des monstres), saut croissant : mon niveau + 5 x victoires, et toujours au-dessus de la zone actuelle
     const curMin = z.find(([h]) => h === cur)?.[3] ?? 0;
@@ -874,9 +877,17 @@ async function attackGroup(page, zone, maxRank) {
   const t = await page.locator('main').innerText();
   const resv = t.match(/réservée aux joueurs de niveau (\d+)/);
   if (resv && (S.level ?? 0) < +resv[1]) { // trop haut pour moi (prestige, redemarrage) : zone de mon niveau
-    log(`ZONE ${zone} reservee au niveau ${resv[1]} (moi ${S.level}) : je change de zone`); decide(`Zone reservee au niveau ${resv[1]}, je suis niveau ${S.level} : zone de mon niveau`);
-    xpHard = false; S.xpHard = false;
-    const nz = await pickZone(page, zone, false);
+    log(`ZONE ${zone} reservee au niveau ${resv[1]} (moi ${S.level}) : je change de zone`);
+    (S.zoneReq ??= {})[zone] = +resv[1];
+    let nz;
+    if (xpHard) { // l'XP hard continue : saut suivant parmi les zones ouvertes, depuis la derniere zone tentee
+      decide(`Zone reservee au niveau ${resv[1]}, je suis niveau ${S.level} : XP hard continue sur la zone ouverte suivante`);
+      if (S.xpHardLog?.[0]?.href === zone) S.xpHardLog.shift();
+      nz = await climbZone(page, S.xpHardLog?.[0]?.href ?? zone, 1, 'zone reservee');
+    } else {
+      decide(`Zone reservee au niveau ${resv[1]}, je suis niveau ${S.level} : zone de mon niveau`);
+      nz = await pickZone(page, zone, false);
+    }
     if (!nz || nz === zone) return;
     zone = nz; S.zone = nz;
     return attackGroup(page, nz, maxRank);

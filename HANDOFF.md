@@ -115,7 +115,9 @@ Bilan avant : 51/51 victoires depuis 13:50 (~186/189 au total), 2,3 cartes/tour,
 - Caracs : `vitShareNow()` adapte la part de vitalite a `S.learn.build` (moyennes glissantes des PV mini atteints et des defaites en combat manuel) : defaites > 15 % ou PV mini < 35 % -> +15 pts ; PV mini > 75 % sans defaite -> -10 pts ; bornee 5-60 %. Le poids de la Vitalite dans le score d'objet suit le meme besoin.
 - Zones : `S.learn.zones[zone]` (XP/min et victoires, moyennes glissantes, niveau du perso a la mesure). Tous les 20 combats, bascule vers la zone a la meilleure XP/min parmi celles gagnees au taux vise et mesurees a +-10 niveaux, si elle bat la zone actuelle de 20 %.
 - XP hard (bouton) : plus gros groupes, palier suivant a chaque victoire, 1re defaite -> palier precedent et montee normale. Aucune zone plus dure connue -> XP hard s'arrete (avant : coince sans fin en zone facile, 07/10).
-- `allZones()` : /chasse ne liste que les zones autour de mon niveau ; liste relue a chaque ecart de 5 niveaux et cumulee (avant : figee au lancement, apres prestige le bot ne connaissait que des zones niv 52-60 au niv 109).
+- `allZones()` : /chasse ouvre l'onglet "Zones de mon niveau" ; le bot clique toujours "Toutes les zones (222)" (avant : seulement si < 20 liens, donc jamais avec la nouvelle interface, l'XP hard plafonnait a ma tranche). Liste relue tous les 5 niveaux et cumulee.
+- Zones reservees a un niveau ("reservee aux joueurs de niveau N") : retenues dans `S.zoneReq`, exclues des sauts XP hard ; l'XP hard continue au lieu de s'arreter.
+- 07/10 18h34 : state.json efface par erreur (pas de sauvegarde), repart vide. Limite XP hard remesuree.
 - Tout est visible dans le module "Moteur de combat" du tableau de bord (Build, Meilleures zones).
 
 ## Pats et deblocage par hypotheses (06/10)
