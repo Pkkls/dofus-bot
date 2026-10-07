@@ -13,3 +13,4 @@ state.json.bak
 state.json.tmp
 knowledge/.embeddings.json
 knowledge/learned.kb
+.claude/*.local.md
