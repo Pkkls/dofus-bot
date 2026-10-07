@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import { appendFileSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
+import { adviseZone, pickBestMeasured } from './zone-advisor.mjs';
 import { exec } from 'node:child_process';
 import http from 'node:http';
 import dns from 'node:dns/promises';
@@ -19,7 +20,7 @@ const decide = (m) => {
   else { S.decisions.unshift({ t: Date.now(), m, n: 1 }); S.decisions.length = Math.min(S.decisions.length, 60); }
   push();
 };
-const CFG_SPEC = { xpHardStep: [10, 1, 100], rushPrestige: [0, 0, 10], vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
+const CFG_SPEC = { xpHardStep: [10, 1, 100], zoneCheckEvery: [15, 0, 500], zoneProbe: [3, 1, 8], rushPrestige: [0, 0, 10], vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
   scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMinSec: [90, 0, 570], breakMaxSec: [480, 0, 570], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], abyssDaily: [1, 0, 1], hardEvery: [10, 0, 200], wisShare: [0.3, 0, 1], stuckSec: [15, 5, 120], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
@@ -1564,28 +1565,65 @@ let endHandled = false, deckDue = false, stuck = 0, huntLeft = S.huntLeft ?? 0, 
 // Aventure prioritaire : hors rattrapage XP (apres une defaite d'aventure), XP hard et entrainement. Chemin bloque/fini -> chasse, nouvel essai 30 min apres
 const wantAdventure = () => !rushing() && huntLeft === 0 && !xpHard && trainLeft === 0 && !spotQueue.length && Date.now() > (S.advBlockedUntil ?? 0);
 // Spots XP (bouton) : zones candidates mesurees chacune sur SPOT_FIGHTS combats, puis installation sur la meilleure XP/min
-let spotQueue = [], spotFights = 0;
+let spotQueue = [], spotFights = 0, spotHome = null; // spotHome : zone d'avant la mesure, on y revient si rien ne vaut mieux
 const SPOT_FIGHTS = 3;
 async function planSpots(page) {
   const z = await allZones(page);
   const reach = S.level + Math.max(5, S.learn?.hard?.offset ?? 10); // jusqu'a la limite apprise par XP hard
-  const cand = z.filter(([, mx, , mn]) => mn <= reach && mx >= S.level - 10).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const cand = z.filter(([h, mx, , mn]) => mn <= reach && mx >= S.level - 10 && !((S.zoneReq?.[h] ?? 0) > S.level)).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const fresh = (hr) => { const s = S.learn?.zones?.[hr]; return s && s.n >= SPOT_FIGHTS && Math.abs(s.lvl - S.level) <= 5; }; // deja mesuree a ce niveau
-  spotQueue = cand.map(([hr]) => hr).filter((hr) => !fresh(hr)); spotFights = 0;
+  spotQueue = cand.map(([hr]) => hr).filter((hr) => !fresh(hr)); spotFights = 0; spotHome = zone;
   if (!spotQueue.length) { decide('Spots XP : toutes les zones candidates sont deja mesurees a mon niveau, je choisis directement'); pickSpot(); return false; }
   decide(`Spots XP : ${cand.length} zones a mesurer (${SPOT_FIGHTS} combats chacune) : ${cand.map(([, mx, nm, mn]) => `${nm} ${mn}-${mx}`).join(', ')}`);
   log(`SPOTS mesure de ${cand.length} zones`);
   return false;
 }
-function pickSpot() {
+// Check XP (auto) : toutes les zoneCheckEvery boucles de chasse, ou des que j'ai pris 3 niveaux. La decision vient de
+// zone-advisor.mjs (pur, teste) : mesurer les zones plus dures debloquees jamais mesurees a mon niveau, passer sur une
+// zone deja mesuree qui rapporte 15 % de plus, ou rester. Sans ce check une zone debloquee n'etait jamais essayee et le
+// bot restait dans une zone qui ne rapportait plus rien.
+const zoneFacts = () => {
   const Z = S.learn?.zones ?? {};
-  const ok = Object.entries(Z).filter(([, s]) => s.n >= SPOT_FIGHTS && s.win >= CFG.targetWin && Math.abs(s.lvl - S.level) <= 10).sort((a, b) => b[1].xpm - a[1].xpm);
-  const best = ok[0];
-  if (!best) { decide('Spots XP : aucune zone mesuree ne tient le taux de victoire vise, je garde la zone actuelle'); return; }
-  zone = best[0]; climbHist = []; climbStreak = 0;
-  (S.learn ??= {}).bestSpot = { href: best[0], name: best[1].name ?? best[0], xpm: Math.round(best[1].xpm), win: best[1].win, lvl: S.level, at: Date.now() };
-  decide(`Spots XP : meilleure zone ${best[1].name ?? best[0]} a ${Math.round(best[1].xpm)} XP/min (victoires ${Math.round(best[1].win * 100)} %), je m'y installe`);
-  log(`SPOTS meilleur ${best[1].name ?? best[0]} ${Math.round(best[1].xpm)} XP/min`);
+  const list = ZONES ?? Object.keys(Z).map((h) => [h, Z[h].max ?? 0, Z[h].name ?? h, Z[h].min ?? 0]);
+  return {
+    level: S.level ?? 0,
+    currentZone: zone,
+    zones: list.map(([href, maxLevel, name, minLevel]) => ({ href, name, minLevel, maxLevel })),
+    levelLocks: S.zoneReq ?? {},
+    measures: Object.fromEntries(Object.entries(Z).map(([h, m]) => [h, { fights: m.n, winRate: m.win, xpPerMin: m.xpm, level: m.lvl, name: m.name }])),
+  };
+};
+const advisorConfig = () => ({ probeCount: CFG.zoneProbe, minFights: SPOT_FIGHTS, targetWinRate: CFG.targetWin, moveMargin: 0.15 });
+async function zoneReview(page) {
+  await allZones(page); // liste et verrous a jour (relue tous les 5 niveaux)
+  const facts = zoneFacts();
+  const d = adviseZone({ ...facts, config: advisorConfig() });
+  const label = (h) => { const z = facts.zones.find((x) => x.href === h); return z ? `${z.name} ${z.minLevel}-${z.maxLevel}` : h; };
+  const here = facts.measures[zone];
+  S.zoneReview = { at: Date.now(), lvl: S.level, zone, action: d.action, zones: d.zones ?? (d.zone ? [d.zone] : []), xpmHere: here ? Math.round(here.xpPerMin) : null };
+  if (d.action === 'probe') {
+    spotHome = zone; spotFights = 0; spotQueue = d.zones;
+    decide(`Check XP : zones debloquees plus dures jamais mesurees a mon niveau ${S.level} (${d.zones.filter((h) => h !== zone).map(label).join(', ')}) : je les mesure, ${SPOT_FIGHTS} combats chacune, puis je garde la meilleure XP/min`);
+    log(`CHECK XP mesure ${d.zones.length} zone(s) : ${d.zones.map(label).join(', ')}`);
+  } else if (d.action === 'move') {
+    const m = facts.measures[d.zone];
+    decide(`Check XP : ${label(d.zone)} rapporte ${Math.round(m.xpPerMin)} XP/min contre ${Math.round(here.xpPerMin)} ici (victoires ${Math.round(m.winRate * 100)} %), j'y vais`);
+    log(`CHECK XP meilleure zone ${label(d.zone)} (${Math.round(m.xpPerMin)} vs ${Math.round(here.xpPerMin)} XP/min)`);
+    zone = d.zone; climbHist = []; climbStreak = 0;
+    if (!S.queue.includes('deck')) S.queue.push('deck');
+  } else {
+    decide(`Check XP : ${here ? `${Math.round(here.xpPerMin)} XP/min ici` : 'zone pas encore mesuree'}, aucune zone debloquee plus dure a mesurer ni mieux mesuree a mon niveau : je reste`);
+  }
+}
+// fin de mesure (Spots ou check XP) : la meilleure XP/min mesuree a mon niveau qui tient le taux de victoire vise
+function pickSpot() {
+  const best = pickBestMeasured({ ...zoneFacts(), config: { ...advisorConfig(), levelTolerance: 10 } });
+  if (!best) { if (spotHome) zone = spotHome; decide('Spots XP : aucune zone mesuree ne tient le taux de victoire vise, je reviens a ma zone'); return; }
+  const name = best.m.name ?? best.zone.name;
+  zone = best.zone.href; climbHist = []; climbStreak = 0;
+  (S.learn ??= {}).bestSpot = { href: zone, name, xpm: Math.round(best.m.xpPerMin), win: best.m.winRate, lvl: S.level, at: Date.now() };
+  decide(`Spots XP : meilleure zone ${name} a ${Math.round(best.m.xpPerMin)} XP/min (victoires ${Math.round(best.m.winRate * 100)} %), je m'y installe`);
+  log(`SPOTS meilleur ${name} ${Math.round(best.m.xpPerMin)} XP/min`);
 }
 async function goAdventure(page) {
   await page.goto(BASE + '/aventure').catch(() => {});
@@ -2119,17 +2157,12 @@ while (true) {
       await attackGroup(page, zone, grpRank());
       continue;
     }
-    // meilleure zone connue : XP/min la plus haute parmi celles gagnees au taux vise, mesurees recemment (niveau proche)
-    if (!xpHard && zone && !adventure && !climbDir && ++zoneCheck >= (rushing() ? 8 : 20)) {
+    // Check XP : meilleures zones pour mon niveau (voir zoneReview)
+    if (CFG.zoneCheckEvery && !xpHard && !spotQueue.length && zone && !adventure && !climbDir
+        && (++zoneCheck >= CFG.zoneCheckEvery || S.level >= (S.zoneReview?.lvl ?? 0) + 3)) {
       zoneCheck = 0;
-      const Z = S.learn?.zones ?? {}, cur = Z[zone];
-      const best = Object.entries(Z).filter(([k, z]) => z.n >= (rushing() ? 1 : 5) && z.win >= CFG.targetWin && Math.abs(z.lvl - S.level) <= 10 && !((S.zoneReq?.[k] ?? 0) > S.level)).sort((a, b) => b[1].xpm - a[1].xpm)[0];
-      if (best && best[0] !== zone && cur && best[1].xpm > 1.2 * cur.xpm) {
-        decide(`Zone : ${best[0].split('=')[1]} rapporte ${Math.round(best[1].xpm)} XP/min contre ${Math.round(cur.xpm)} ici (victoires ${Math.round(best[1].win * 100)} %), j'y vais`);
-        log(`ZONE meilleure XP/min ${best[0]} (${Math.round(best[1].xpm)} vs ${Math.round(cur.xpm)})`);
-        zone = best[0]; climbHist = []; climbStreak = 0;
-        if (!S.queue.includes('deck')) S.queue.push('deck');
-      }
+      await safe('zone', zoneReview(page));
+      if (spotQueue.length) continue; // la mesure demarre au tour suivant
     }
     if (CFG.hardEvery && CFG.manualFight && !xpHard && !spotQueue.length && zone && !adventure && !S.recharging && S.level - ((S.learn?.hard?.lvl ?? 0) > S.level ? 0 : S.learn?.hard?.lvl ?? 0) >= CFG.hardEvery) {
       xpHard = true; xpHardWins = XP_TOP; xpHardDown = false; xpHardLastWin = null; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0;

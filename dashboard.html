@@ -590,6 +590,8 @@ const CFG_META = {
   breakMaxSec: ['Pause maxi', 'secondes (< 600, sinon la place est liberee)', 0, 570, 5],
   loseRate: ['Defaites volontaires', 'part des combats de chasse fuis au tour 1 (0.05 = 5 %)', 0, 0.5, 0.01],
   breakJunk: ['Briser au lieu de vendre', '1 = objets inutiles brises en orbes de forge, vendus seulement si les kamas manquent pour l\'energie', 0, 1, 1],
+  zoneCheckEvery: ['Check XP', 'toutes les N boucles de chasse (et a chaque +3 niveaux) : mesure les zones debloquees plus dures, garde la meilleure XP/min ; 0 = jamais', 0, 500, 1],
+  zoneProbe: ['Zones testees par check', 'zones debloquees plus dures mesurees a chaque check XP', 1, 8, 1],
   xpHardStep: ["Pas de l'XP hard", 'niveaux de monstres descendus a chaque defaite (depart : zone ouverte la plus dure)', 1, 100, 1],
   hardEvery: ['XP hard automatique', 'relance la recherche de limite tous les N niveaux, 0 = jamais', 0, 200, 1],
   stuckSec: ['Page figee apres', 'secondes sans changement avant F5 / deblocage', 5, 120, 1],
