@@ -820,12 +820,9 @@ const pickGroup = (txt, maxRank) => {
 let ZONES = null, zonesLvl = 0;
 async function allZones(page) {
   if (ZONES?.length && Math.abs((S.level ?? 0) - zonesLvl) < 5) return ZONES;
-  await page.goto(BASE + '/chasse');
+  // /chasse seul = "Zones de mon niveau" ; ?toutes=1 = les 222, sans quoi l'XP hard ne voit pas plus haut que ma tranche
+  await page.goto(BASE + '/chasse?toutes=1');
   await page.locator('a[href^="/chasse?zone="]').first().waitFor({ timeout: 20000 });
-  // "Zones de mon niveau" est l'onglet par defaut : sans "Toutes les zones (222)" l'XP hard ne voit pas plus haut que ma tranche
-  const mine = await page.locator('a[href^="/chasse?zone="]').count();
-  await page.getByText(/Toutes les zones/).first().click({ timeout: 5000 }).catch(() => {});
-  await page.waitForFunction((n) => document.querySelectorAll('a[href^="/chasse?zone="]').length > n, mine, { timeout: 8000 }).catch(() => {});
   const seen = new Set();
   const fresh = (await page.locator('a[href^="/chasse?zone="]').evaluateAll((els) => els.map((e) => [e.getAttribute('href'), e.innerText])))
     .filter(([h]) => !seen.has(h) && seen.add(h)).map(([h, t]) => { const r = zoneRange(t); return [h, r?.[1] ?? 0, t.split('\n')[0], r?.[0] ?? 0]; }).filter(([, m]) => m); // [href, niv max, nom, niv min]
@@ -853,6 +850,16 @@ async function climbZone(page, cur, dir, why) {
     queueDeck();
     decide(`XP hard : ${next[2]} (monstres niv ${next[3]}-${next[1]}, cible plancher ${target}, moi ${S.level})`);
     log(`ZONE montee XP hard ${next[2]} niv ${next[3]}-${next[1]}`);
+    (S.xpHardLog ??= []).unshift({ t: Date.now(), name: next[2], href: next[0], min: next[3], max: next[1], lvl: S.level, res: null }); S.xpHardLog.length = Math.min(S.xpHardLog.length, 30);
+    return next[0];
+  }
+  if (xpHard && dir < 0) { // XP hard en descente : la zone juste en dessous (niveau min des monstres)
+    const curMin = z.find(([h]) => h === cur)?.[3] ?? Infinity;
+    const next = [...z].sort((a, b) => b[3] - a[3]).find(([, , , mn]) => mn < curMin);
+    if (!next) { xpHard = false; S.xpHard = false; xpHardDown = false; decide('XP hard : plus de zone en dessous, retour a la montee normale'); log('XP HARD termine - plus de zone en dessous'); return cur; }
+    queueDeck();
+    decide(`XP hard descente : ${next[2]} (monstres niv ${next[3]}-${next[1]}, moi ${S.level})`);
+    log(`ZONE descente XP hard ${next[2]} niv ${next[3]}-${next[1]}`);
     (S.xpHardLog ??= []).unshift({ t: Date.now(), name: next[2], href: next[0], min: next[3], max: next[1], lvl: S.level, res: null }); S.xpHardLog.length = Math.min(S.xpHardLog.length, 30);
     return next[0];
   }
@@ -1748,7 +1755,8 @@ async function runActions(page) {
   }
   return started;
 }
-let xpHard = false, xpHardWins = 0, xpHardLastWin = null, zoneCheck = 0;
+let xpHard = false, xpHardWins = 0, xpHardLastWin = null, xpHardDown = false, zoneCheck = 0;
+const XP_TOP = 1000; // xpHardWins de depart : 1er saut direct a la zone la plus dure ouverte (kil : niv 100 battait deja du niv 200)
 const grpRank = () => (xpHard ? 3 : strikes ? 0 : CFG.maxGroup);
 let paced = false, throwChecked = false; // rythme : ecart deja fait sur cet ecran de fin ; abandon deja tire pour ce combat
 let trainLeft = 0, trainZone = null, climbStreak = 0, climbDir = 0, climbHist = [], lastLevel = 0; // entrainement demande depuis le tableau de bord
@@ -1756,7 +1764,7 @@ let fightTimes = []; // fins de combat de la derniere heure (plafond)
 let energyText = ''; // ecran de fin deja traite pour "Plus assez d'energie" (le message reste affiche apres la recharge)
 // actions lancables depuis le tableau de bord (true = un combat a ete lance)
 const ACTIONS = {
-  coffres: openChests, deck: optimizeDeck, inventaire: (p) => { S.invSeen = {}; return equipFromInventory(p); }, hdv: (p) => { S.hdvBrokenUntil = 0; return hdvBuy(p); }, prestige: (p) => { rushNext = 0; return rushPrestige(p); }, hdvvente: hdvSell, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, abysses: startAbyss, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : plus gros groupes, palier de zone suivant a chaque victoire, jusqu\'a la premiere defaite'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
+  coffres: openChests, deck: optimizeDeck, inventaire: (p) => { S.invSeen = {}; return equipFromInventory(p); }, hdv: (p) => { S.hdvBrokenUntil = 0; return hdvBuy(p); }, prestige: (p) => { rushNext = 0; return rushPrestige(p); }, hdvvente: hdvSell, carac: allocateStats, arene: fightArena, boss: tryBoss, energie: (p) => buyEnergy(p, true), forge: forgeUpgrade, abysses: startAbyss, spots: planSpots, site: async (p) => { await siteScan(p); await p.goto(COMBAT).catch(() => {}); return false; }, xphard: async () => { xpHard = true; xpHardWins = XP_TOP; xpHardDown = false; xpHardLastWin = null; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0; decide('XP hard : direct a la zone la plus dure, une zone plus bas a chaque defaite, je farme la ou je gagne'); log('XP HARD demarre'); return false; }, entrainement: async () => { trainLeft = CFG.trainFights; trainZone = null; decide(`Entrainement demande : ${CFG.trainFights} combats vers le niveau ${CFG.trainLevel}, en manuel`); return false; },
   zone: async (p) => { zone = (await pickZone(p, zone, true)) ?? zone; await attackGroup(p, zone, 0); return true; },
   aventure: async (p) => { huntLeft = 0; S.advBlockedUntil = 0; xpHard = false; S.xpHard = false; return goAdventure(p); }, // l'aventure reste ensuite prioritaire (wantAdventure)
 };
@@ -1918,8 +1926,18 @@ while (true) {
       if (xpHard) {
         const jump = S.xpHardLog?.[0];
         if (jump && !jump.res && jump.href === zone) jump.res = win ? 'V' : 'D';
-        if (win) { climbDir = 1; xpHardWins++; if (jump?.href === zone) xpHardLastWin = jump; }
-        else {
+        if (win && xpHardDown) { // 1re victoire en descendant depuis le haut : c'est ici qu'on farme
+          xpHard = false; S.xpHard = false; xpHardDown = false; climbDir = 0; climbHist = []; climbStreak = 0;
+          const H = ((S.learn ??= {}).hard ??= { offset: 0, n: 0, lvl: 0 });
+          const off = (jump?.min ?? S.level) - S.level; H.offset = H.n ? 0.6 * H.offset + 0.4 * off : off; H.n++; H.lvl = S.level;
+          decide(`XP hard : victoire en ${jump?.name ?? zone} (monstres niv ${jump?.min ?? '?'}+, moi ${S.level}), je farme ici`);
+          log(`XP HARD termine - farm ${jump?.name ?? zone} niv ${jump?.min ?? '?'}-${jump?.max ?? '?'}`);
+        } else if (win) { climbDir = 1; xpHardWins++; if (jump?.href === zone) xpHardLastWin = jump; }
+        else if (!xpHardLastWin) { // pas encore de victoire depuis le haut : une zone plus bas
+          xpHardDown = true; climbDir = -1;
+          decide(`XP hard : defaite en ${jump?.name ?? zone} (monstres niv ${jump?.min ?? '?'}+), je descends d'une zone`);
+          log(`XP HARD defaite ${jump?.name ?? zone} - descente d'une zone`);
+        } else {
           xpHard = false; S.xpHard = false; climbHist = []; climbStreak = 0; climbDir = 0;
           const H = ((S.learn ??= {}).hard ??= { offset: 0, n: 0, lvl: 0 });
           if (xpHardLastWin) { const off = xpHardLastWin.min - S.level; H.offset = H.n ? 0.6 * H.offset + 0.4 * off : off; zone = xpHardLastWin.href; }
@@ -2029,7 +2047,8 @@ while (true) {
       decide(`${CFG.defeatThreshold} defaites sur 10 : deck revu, groupe facile${strikes >= 2 ? ', et zone plus facile' : ''}`);
       log(`TROP DE DEFAITES (palier ${strikes}) - deck revu, groupe facile${strikes >= 2 ? ', zone plus facile' : ''}`);
       await safe('deck', optimizeDeck(page));
-      if (strikes >= 2 || !zone) zone = (await pickZone(page, zone, true)) ?? zone;
+      if (!zone) zone = (await pickZone(page, zone, true)) ?? zone;
+      else if (strikes >= 2) zone = await climbZone(page, zone, -1, `${CFG.defeatThreshold} defaites sur 10, 2e palier`); // un cran plus bas, pas tout en bas
       await attackGroup(page, zone, 0);
       continue;
     }
@@ -2060,7 +2079,7 @@ while (true) {
       }
     }
     if (CFG.hardEvery && CFG.manualFight && !xpHard && !spotQueue.length && zone && !adventure && !S.recharging && S.level - ((S.learn?.hard?.lvl ?? 0) > S.level ? 0 : S.learn?.hard?.lvl ?? 0) >= CFG.hardEvery) {
-      xpHard = true; xpHardWins = 1; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0;
+      xpHard = true; xpHardWins = XP_TOP; xpHardDown = false; xpHardLastWin = null; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0;
       decide(`XP hard automatique : ${S.learn?.hard?.n ? `${S.level - S.learn.hard.lvl} niveaux depuis la derniere mesure` : 'limite jamais mesuree'}, je recherche ma limite`);
       log('XP HARD demarre (auto)');
     }
