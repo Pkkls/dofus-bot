@@ -1,0 +1,222 @@
+{
+ "model": "qwen2.5:7b-instruct",
+ "score": 10,
+ "total": 14,
+ "msAvg": 10909,
+ "by": {
+  "doctor/cause-externe": {
+   "ok": 2,
+   "n": 2
+  },
+  "doctor/bug-interne": {
+   "ok": 0,
+   "n": 2
+  },
+  "doctor/historique": {
+   "ok": 1,
+   "n": 2
+  },
+  "doctor/attente-normale": {
+   "ok": 2,
+   "n": 3
+  },
+  "doctor/anti-bot": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/mesure-perimee": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/choix-mesure": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/victoires": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/exploration": {
+   "ok": 1,
+   "n": 1
+  }
+ },
+ "rows": [
+  {
+   "kind": "doctor",
+   "id": "v2-inactivity-loop",
+   "category": "cause-externe",
+   "expect": [
+    "alerter",
+    "pause"
+   ],
+   "got": "alerter",
+   "ok": true,
+   "ms": 20895,
+   "why": "les messages indiquent que l'activité du site est interrompue temporairement, ce qui suggère un déploiement en cours. Relancer le bot pourrait perturber cette procédure."
+  },
+  {
+   "kind": "doctor",
+   "id": "frozen-victory",
+   "category": "bug-interne",
+   "expect": [
+    "f5",
+    "zone"
+   ],
+   "got": "alerter",
+   "ok": false,
+   "ms": 11738,
+   "why": "Le bot n'a pas effectué de combat depuis 16 minutes alors qu'il est en statut 'combat' et que le site semble fonctionnel. Il n'y a aucun historique sur ce symptôme, suggérant une nouvelle situation qui nécessite une attention particulière."
+  },
+  {
+   "kind": "doctor",
+   "id": "history-says-zone",
+   "category": "historique",
+   "expect": [
+    "zone"
+   ],
+   "got": "attendre",
+   "ok": false,
+   "ms": 12125,
+   "why": "le bot est déjà en statut combat et n'a pas de nouvelles actions à effectuer, ce qui suggère une file d'attente sur le serveur. Attendre permet de laisser le temps au serveur de traiter les actions du bot."
+  },
+  {
+   "kind": "doctor",
+   "id": "server-queue",
+   "category": "attente-normale",
+   "expect": [
+    "attendre"
+   ],
+   "got": "attendre",
+   "ok": true,
+   "ms": 10386,
+   "why": "La file d'attente indiquée est stable et le bot se trouve actuellement dans une position avantageuse (7/12). Attendre permet de conserver la place dans la file sans risquer de perdre des tours de combat."
+  },
+  {
+   "kind": "doctor",
+   "id": "presence-test",
+   "category": "anti-bot",
+   "expect": [
+    "alerter"
+   ],
+   "got": "alerter",
+   "ok": true,
+   "ms": 10175,
+   "why": "La page affiche un test de présence anti-bot et les essais précédents pour débloquer ont échoué. Cette situation est similaire à l'exemple 4 où une réponse manuelle est requise."
+  },
+  {
+   "kind": "doctor",
+   "id": "rate-limit-429",
+   "category": "attente-normale",
+   "expect": [
+    "attendre",
+    "pause"
+   ],
+   "got": "pause",
+   "ok": true,
+   "ms": 9960,
+   "why": "La page affiche une rate limit 429 qui se répète, indiquant que le bot a été temporairement banni des requêtes. Attendre permet de laisser au serveur le temps de reset cette limite."
+  },
+  {
+   "kind": "doctor",
+   "id": "defeat-streak",
+   "category": "bug-interne",
+   "expect": [
+    "zone",
+    "deck"
+   ],
+   "got": "alerter",
+   "ok": false,
+   "ms": 10621,
+   "why": "Le bot subit des defaites consécutives sans gagner d'XP, ce qui indique un problème potentiel avec le deck ou la stratégie. Il est préférable d'en informer l'utilisateur pour vérification."
+  },
+  {
+   "kind": "doctor",
+   "id": "f5-failed-twice-no-history",
+   "category": "historique",
+   "expect": [
+    "aventure",
+    "alerter",
+    "pause"
+   ],
+   "got": "alerter",
+   "ok": true,
+   "ms": 11525,
+   "why": "La page est figée depuis plusieurs minutes et les essais de F5 n'ont pas eu d'effet. Cette situation pourrait être liée à un problème technique du site ou à une boucle inattendue, nécessitant une attention pour éviter toute perte de progression."
+  },
+  {
+   "kind": "doctor",
+   "id": "site-update-renamed",
+   "category": "cause-externe",
+   "expect": [
+    "site",
+    "alerter"
+   ],
+   "got": "alerter",
+   "ok": true,
+   "ms": 10334,
+   "why": "Le bot a fait 3 essais consécutifs sans succès pour cliquer sur 'Attaquer', ce qui indique un problème persistant. Il est prudent d'en informer l'utilisateur."
+  },
+  {
+   "kind": "doctor",
+   "id": "energy-empty",
+   "category": "attente-normale",
+   "expect": [
+    "attendre"
+   ],
+   "got": "pause",
+   "ok": false,
+   "ms": 10616,
+   "why": "Le bot n'est ni en pause ni en attente, il devrait normalement combattre. Il est possible qu'il y ait une limitation temporaire du serveur ou un bug qui nécessite une pause pour que le site réponde correctement."
+  },
+  {
+   "kind": "zone",
+   "id": "stale-measure-trap",
+   "category": "mesure-perimee",
+   "expect": [
+    "A",
+    "B"
+   ],
+   "got": "A",
+   "ok": true,
+   "ms": 11949,
+   "why": "La Jungle obscure est mesurée à votre niveau actuel et offre déjà un bon taux d'XP par minute, tandis que la Clairiere de Floribonde n'a pas été testée et la Village des Zoths est verrouillé."
+  },
+  {
+   "kind": "zone",
+   "id": "better-measured",
+   "category": "choix-mesure",
+   "expect": [
+    "B"
+   ],
+   "got": "B",
+   "ok": true,
+   "ms": 8724,
+   "why": "La Tronc de l'arbre Hakam offre un taux d'XP par minute beaucoup plus élevé que les autres zones, bien que le pourcentage de victoires soit légèrement inférieur à la zone actuelle."
+  },
+  {
+   "kind": "zone",
+   "id": "too-hard",
+   "category": "victoires",
+   "expect": [
+    "A"
+   ],
+   "got": "A",
+   "ok": true,
+   "ms": 6935,
+   "why": "La zone Feudala 132-150 a un taux de victoire plus élevé, ce qui réduit le risque de perte d'objets et maintient une progression stable."
+  },
+  {
+   "kind": "zone",
+   "id": "unmeasured-harder",
+   "category": "exploration",
+   "expect": [
+    "B"
+   ],
+   "got": "B",
+   "ok": true,
+   "ms": 6745,
+   "why": "La zone Berceau d'Alma n'a pas encore été mesurée à mon niveau, mais elle pourrait valoir mieux et mérite d'être testée."
+  }
+ ]
+}

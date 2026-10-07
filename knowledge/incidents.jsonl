@@ -1,0 +1,12 @@
+{"symptom":"ecran de victoire immobile depuis 12 min","clues":"page /combat VICTOIRE, bouton Retour a la chasse, aucune erreur","order":"f5","outcome":"gueri","why":"le rechargement a relance la boucle du bot"}
+{"symptom":"page figee sur le choix de groupe","clues":"page /chasse?zone, groupes affiches, aucun ATTAQUE depuis 10 min, f5 deja essaye 2 fois","order":"zone","outcome":"gueri","why":"changer de zone a relance une attaque"}
+{"symptom":"rechargement en boucle sur l ecran place liberee","clues":"annonce de maintenance du site, meme ecran apres chaque rechargement","order":"alerter","outcome":"gueri","why":"le site etait en maintenance, kil a relance plus tard"}
+{"symptom":"plus de combats depuis 25 min","clues":"Energie 0/100, Plus assez d energie, aucune erreur","order":"attendre","outcome":"gueri","why":"l energie revient seule, 1 point toutes les 6 min"}
+{"symptom":"plus de combats depuis 15 min","clues":"Le serveur est plein, File d attente position 20 puis 12","order":"attendre","outcome":"gueri","why":"la place est arrivee seule"}
+{"symptom":"Slow down affiche apres beaucoup de pages","clues":"HTTP 429 repete, statut rate-limit","order":"attendre","outcome":"gueri","why":"le limiteur du site se vide en quelques minutes"}
+{"symptom":"defaites en serie, 5 de suite dans la meme zone","clues":"DEFAITE gains=0 repete, zone de monstres plus forts","order":"zone","outcome":"gueri","why":"une zone plus facile a ramene les victoires"}
+{"symptom":"defaites contre une mecanique de soins inverses","clues":"Indice : vos soins vous blessaient, DEFAITE au tour 4","order":"deck","outcome":"gueri","why":"le deck reoptimise sans soins a gagne"}
+{"symptom":"boutons d attaque introuvables juste apres une mise a jour du site","clues":"MAJ SITE detectee, Timeout sur getByRole button Attaquer","order":"site","outcome":"gueri","why":"le releve du site a montre le nouveau libelle, le code a ete corrige"}
+{"symptom":"aventure bloquee sur la meme etape","clues":"page /aventure, Continuer l aventure visible, f5 sans effet","order":"aventure","outcome":"gueri","why":"relancer l etape a debloque"}
+{"symptom":"fenetre Es-tu toujours la avec des chiffres a cliquer","clues":"test de presence anti-bot, Clique sur le 5","order":"alerter","outcome":"gueri","why":"seul kil repond au test de presence"}
+{"symptom":"ecran de victoire immobile","clues":"page /combat VICTOIRE","order":"pause","outcome":"sans effet","why":"la pause a arrete le bot pour rien : un f5 suffisait"}

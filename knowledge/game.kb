@@ -1,0 +1,55 @@
+### game.character | chat zone
+PERSONNAGE : Bernardarnault, Cra (classe a distance, cartes Air surtout : Tirs Puissants, Cabriole, Foene, Souffle, Tornabombe...).
+NIVEAU : 1 a 200. Prestige actuel : 2 (un prestige = retour niveau 1 en gardant certaines choses, +50 % d'equipement).
+CARACTERISTIQUES : points a repartir a chaque niveau. Le bot met environ 80 % dans la stat de l'element dominant du deck (Air -> Agilite, Feu -> Intelligence, Eau -> Chance, Terre/Neutre -> Force), une part en Vitalite (PV) selon le danger, et de la Sagesse (+XP) tant que le niveau 200 n'est pas atteint.
+STATS QUI COMPTENT LE PLUS (poids du bot) : PA 100, PM 60, Portee 30, Invocation 10, Dommages 5, Critique 4, Soins 2, Dommages critiques 2, Puissance 1.5, Vitalite ~1, stat d'element selon le deck.
+
+### game.combat | chat
+COMBAT : tour par tour. Chaque tour : des PA (points d'action, ~10) pour jouer des cartes ; 5 cartes en main.
+CARTES : degats par element, vol de vie, soins, bombes (degats au tour suivant), zone (touche plusieurs ennemis). Une arme (ex. Arc de Fleche Mauve).
+ENNEMIS : PV, resistances par element (% ; une resistance negative = point faible), mecaniques de boss (ex. "a partir du tour 4, vos soins vous blessent").
+MODES : moteur manuel du bot (calcule le meilleur enchainement de cartes) ou bouton "Auto" du jeu. Jamais "Auto AFK" (gains -50 %).
+STYLE : le bot apprend un style (equilibre / agressif / prudent) selon victoires et vitesse.
+DECK : 10 cartes, 6 decks possibles. Le bot garde les cartes utiles et complete par degats/PA selon ses stats ; il le revoit apres des defaites ou une nouvelle zone.
+
+### game.activities | chat zone
+CHASSE : choisir une zone (niveaux de monstres, "Niveau N requis" si verrouillee), puis un groupe 1 a 4 monstres (difficulte Facile a Tres difficile). Source principale d'XP. 1 energie par combat.
+AVENTURE (Chemin) : histoire en etapes, boss toutes les 10 etapes, prioritaire quand debloquee ; record personnel d'etape.
+BOSS DE ZONE : toutes les 20 min, reste 5 min, 1 essai, 2 energie, butin possible : 1 % Dofus, 1 % Rayonnant.
+ARENE : combat contre le perso d'un autre joueur joue par l'ordi ; Elo ; tickets (10 par jour) ; battre plus fort rapporte plus, perdre contre plus faible coute cher ; meme adversaire = gain divise par 2 a chaque fois sur 24 h.
+ABYSSES : roguelike de 100 etages, 20 energie la descente, equipement ignore (6 PA, 3 PM), une seule vie, sorts a choisir, classement jour/semaine.
+ASCENSION : tour de boss reservee aux joueurs ayant fait un prestige ET revenus au niveau 200 ; coffre a chaque etage, gros coffre tous les 5 ; un etage minimum exige pour passer certains prestiges.
+GROTTE DE L'AEFKA (V2) : le perso explore seul pendant l'absence et ramasse des coffres.
+QUETES DU JOUR : 4 quetes (ex. 10 combats d'arene, 10 familles de monstres), un coffre par quete via "Reclamer", remise a zero quotidienne.
+BOOST (evenement) : ex. "Boost Gelano + Dofus" : chaque monstre vaincu peut lacher le Gelano ou un Dofus (0,1 %).
+ENERGIE : max 100 (peut depasser par achat), +1 toutes les 6 min. Achat possible a ~300 K le point (desactive par defaut).
+
+### game.items | chat
+EMPLACEMENTS : Chapeau, Cape, Amulette, 2 Anneaux, Ceinture, Bottes, Arme, Bouclier, Familier, plusieurs Dofus/Trophees.
+RARETES (croissant) : Commun, Peu commun, Rare, Epique, Mythique, Legendaire. Tiers de fusion 1 a 5, le tiers 5 s'appelle "Rayonnant".
+SCORE : le bot note chaque objet = somme(stat x poids) ; il equipe le meilleur score par emplacement.
+OBJETS PRECIEUX (jamais vendus, brises ni fusionnes) : Rayonnant, objets a tiers, favoris, Gelano, Molosk (familier garde au prestige), rarete Rare et plus.
+COLLECTION : ~3 300 objets differents a decouvrir.
+
+### game.economy | chat
+KAMAS : monnaie. Gagnes en combat (~100 a 500 par victoire) et par ventes. Le bot garde une reserve (kamasReserve) qu'il ne depense jamais.
+COFFRES : 3 gratuits par heure (6 en reserve max) + gagnes en combat ; un equipement de ta tranche de niveau. Boutique : classique 5 000, chanceux 10 000 (chances x3, 3 % Rayonnant), epique 20 000 (Epique ou mieux garanti). Peut aussi donner ticket d'arene, boules de capture, parchemin de carac.
+HDV (hotel de vente) : acheter ou vendre aux autres joueurs, taxe 2 % par vente. Le bot achete seulement pour remplir un emplacement vide ou si le gain par kama est bon, au-dessus de la reserve.
+VENTE PAR LE BOT : seulement Commun ou Peu commun, score negatif, comparaison complete ; jamais anneau, familier, Dofus/Trophee ; dans le doute il GARDE.
+FUSION : 3 objets du meme tiers -> 1 objet du tiers suivant (+10 % de stats), jusqu'au tiers 5 Rayonnant. Le bot fusionne 3 exemplaires au moins aussi bons que la piece portee.
+FORGEMAGIE : briser un objet donne des orbes (1 sous le niveau 70, 2 jusqu'au 139, 3 au-dela, x3 si Rayonnant ; 2 500 orbes par jour max). Les orbes ameliorent le Bouclier de forge : +% de stats sur tout l'equipement, jusqu'a +200 % au niveau 200 du bouclier, garde au prestige. Un echec coute les orbes, jamais un niveau.
+
+### game.prestige | chat
+PRESTIGE : au niveau 200, le perso peut recommencer au niveau 1 avec un bonus (+50 % d'equipement par prestige) ; certains objets sont gardes (Molosk, Bouclier de forge). Certains prestiges exigent un etage d'Ascension (ex. etage 20 pour le prestige 4).
+LE BOT NE DECIDE JAMAIS UN PRESTIGE SEUL (sauf reglage explicite de kil, "rushPrestige").
+APRES UN PRESTIGE : niveau 1, les vieilles mesures (XP/min par zone) ne valent plus rien, les zones et l'equipement sont a refaire.
+
+### game.bot-routine | chat order
+CE QUE LE BOT FAIT SEUL :
+- Chasse en continu dans la zone qui donne le plus d'XP/min a son niveau (check XP toutes les 15 boucles : il mesure les zones plus dures debloquees).
+- XP hard : part de la zone la plus dure ouverte, descend de 10 niveaux a chaque defaite, farme la ou il gagne.
+- Boss de zone a chaque apparition, aventure quand elle avance, arene si energie suffisante.
+- Passe de gestion tous les 30 combats : coffres, deck, inventaire (equiper, fusionner, vendre prudemment), HDV, caracs, forge.
+- Pauses aleatoires courtes, plafond de requetes/min, plage horaire optionnelle.
+- Medecin (toi) quand il bug ; deblocage appris par ecran ; competences apprises par symptome.
+BOUTONS DU TABLEAU DE BORD (actions que kil peut lancer) : Passe complete, Coffres, Deck, Inventaire, HDV, Vente HDV, Caracs, Arene, Boss, Forge, Energie max (achat, cher), Abysses, Spots XP, Releve du site, XP hard, Entrainement, Zone facile, Aventure, Prestige, Recharger.

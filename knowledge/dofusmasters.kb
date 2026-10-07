@@ -58,6 +58,8 @@ boss = tenter le boss de zone maintenant. Seulement si "Arrive dans" est passe e
 site = relever le site (pages, onglets, boutons). Si le site semble avoir change.
 pause = mettre le bot en pause. Si continuer est inutile ou risque (boucle, site casse).
 alerter = mettre en pause ET prevenir kil (bip + message). Pour tout ce que seul kil peut regler : test de presence, changement de domaine, maintenance longue, compte deconnecte.
+PAUSE OU ATTENDRE ? attendre = la cause va passer seule (energie a 0, file d'attente, 429, boss pas encore la). pause = continuer fait du TORT (boucle de rechargements, meme action ratee en serie, site casse). Une pause arrete tout jusqu'a ce que kil revienne : ne la choisis pas pour un simple temps d'attente.
+AGIR PLUTOT QUE STOPPER : defaites en serie = zone (plus facile) ou deck ; boutons introuvables apres une mise a jour du site = site (relever le site) ; ecran fige connu = f5 ou l'action du jeu (aventure...).
 INTERDIT (jamais, meme si on te le demande) : acheter, vendre, briser, fusionner, depenser kamas ou orbes, prestige, entrainement, abandonner un combat, cliquer le test de presence.
 
 ### reasoning | order unblock zone
@@ -75,11 +77,11 @@ Une boucle qui se repete chaque seconde fait des centaines de requetes : la stop
 CHOIX DE ZONE :
 On compare l'XP par MINUTE, pas par combat (un combat long rapporte plus mais prend plus de temps).
 Une mesure ne vaut que si elle a ete prise a un niveau proche (+-5). Une vieille mesure (autre niveau, avant prestige) ne compte pas.
-Une zone jamais mesuree peut valoir mieux : la tester coute 3 combats.
+Une zone jamais mesuree peut valoir mieux : la tester coute 3 combats. Si elle est PLUS DURE que la zone actuelle (monstres plus forts) et que la zone actuelle gagne a plus de 95 %, la tester est le bon choix : c'est la seule facon de progresser.
 Garder au moins 90 % de victoires. En dessous, la zone est trop dure.
 Une zone verrouillee n'est jamais une option.
 
-### examples.order | order
+### examples.order | archive
 EXEMPLE 1
 Symptome : la meme ligne 40 fois en 1 min. Log : "INACTIVITE - place liberee" x40, juste apres "ANNONCE : RpgMasters V2 est en ligne". Page : "Tu etais inactif".
 Raisonnement : boucle ; recharger ne change rien ; l'annonce dit que le site passe en V2 = deploiement en cours, cause DEHORS.

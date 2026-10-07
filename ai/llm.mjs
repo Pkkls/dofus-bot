@@ -8,10 +8,16 @@
 // Any failure (Ollama down, timeout, invalid answer) returns null and the bot carries on.
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { z } from 'zod';
+import { similar, formatCases } from './retrieve.mjs';
 
 const URL = 'http://127.0.0.1:11434/api/chat';
-const MODEL = 'qwen2.5:7b-instruct';
-const KB_FILES = ['knowledge/dofusmasters.kb', 'knowledge/learned.kb'];
+// Generic across games: the game supplies its knowledge files; the model can be swapped (eval, other machines).
+let MODEL = process.env.LLM_MODEL || 'qwen2.5:7b-instruct';
+let KB_FILES = ['knowledge/dofusmasters.kb', 'knowledge/game.kb', 'knowledge/learned.kb'];
+let PRE_RULES = []; // regles certaines fournies par le jeu ({ id, test(input), order, why }), appliquees avant le modele
+/** @param {{ model?: string, kbFiles?: string[], preRules?: object[] }} c */
+export function configure(c) { if (c.model) MODEL = c.model; if (c.kbFiles) KB_FILES = c.kbFiles; if (c.preRules) PRE_RULES = c.preRules; }
+export const currentModel = () => MODEL;
 // CPU only (num_gpu 0), 4 threads so a game keeps the rest, kept in RAM 30 min to skip the ~12 s reload
 const OPTIONS = { num_gpu: 0, num_thread: 4, num_ctx: 4096, num_predict: 200, temperature: 0 };
 const KEEP_ALIVE = '30m';
@@ -89,17 +95,32 @@ export async function choose(question, options, point = 'zone') {
 export async function diagnose({ symptom, log, page, state, tried, allowed, history }) {
   const orders = allowed.filter((o) => ORDERS.includes(o));
   if (!orders.length) return null;
+  // regles certaines du jeu d'abord : le modele n'est consulte que si aucune ne s'applique
+  for (const r of PRE_RULES) {
+    if ((r.order === 'alerter' || orders.includes(r.order)) && r.test({ symptom, log, page, state, tried, history })) {
+      return { diagnostic: r.why, order: r.order, confidence: 1, reason: `regle fixe "${r.id}" (sans IA)`, rule: r.id };
+    }
+  }
   const schema = z.object({ diagnostic: text(300), order: z.enum(orders), confidence, reason: text(300) });
+  // Ordre voulu : le contexte brut d'abord, les faits decisifs (historique, deja essaye, ordres possibles) a la FIN,
+  // juste avant la question : un petit modele retient surtout le debut et la fin du prompt (Lost in the Middle).
+  // L'historique est pre-digere en code : on ne lui demande pas de compter.
+  const cured = (history ?? '').split(';').map((h) => h.match(/^\s*(\w+)\s*:\s*(\d+)\s*gueri\s*\/\s*(\d+)/)).filter(Boolean)
+    .filter(([, o, ok, ko]) => +ok > +ko && orders.includes(o)).map(([, o]) => o);
+  const failed = [...new Set(tried)].filter((o) => tried.filter((t) => t === o).length >= 2);
+  const cases = await similar(`${symptom}. ${log.slice(-6).join(' ')} ${page.slice(0, 400)}`, 3);
   const user = [
-    `Symptome : ${symptom}`,
-    `Etat du bot : ${state}`,
-    `Ordres possibles MAINTENANT (aucun autre) : ${orders.join(', ')}`,
-    `Ordres deja donnes pour ce symptome : ${tried.length ? tried.join(', ') : 'aucun'}`,
-    `Ce qui a deja marche ou echoue sur ce genre de symptome : ${history || 'rien encore'}`,
-    `Dernieres lignes du log :\n${log.slice(-15).join('\n')}`,
     `Texte de la page :\n${page.slice(0, 1200)}`,
-    'Raisonne comme indique (symptome, indices, cause, dedans ou dehors, ordre, deja essaye), puis reponds en JSON.',
-  ].join('\n\n');
+    `Dernieres lignes du log :\n${log.slice(-15).join('\n')}`,
+    `Etat du bot : ${state}`,
+    formatCases(cases),
+    `SYMPTOME : ${symptom}`,
+    `HISTORIQUE sur ce symptome : ${history || 'rien encore'}`,
+    cured.length ? `>>> L'HISTORIQUE DIT : l'ordre "${cured[0]}" a deja gueri ce symptome. Choisis-le sauf preuve contraire dans le log.` : '',
+    failed.length ? `>>> DEJA RATE 2 FOIS, NE PAS REDONNER : ${failed.join(', ')}` : `Ordres deja donnes : ${tried.length ? tried.join(', ') : 'aucun'}`,
+    `ORDRES POSSIBLES MAINTENANT (aucun autre) : ${orders.join(', ')}`,
+    'Raisonne (symptome, indices, cause, dedans ou dehors, historique, ordre), puis reponds en JSON.',
+  ].filter(Boolean).join('\n\n');
   return ask('order', user, schema);
 }
 

@@ -1,0 +1,222 @@
+{
+ "model": "qwen2.5:7b-instruct",
+ "score": 9,
+ "total": 14,
+ "msAvg": 10555,
+ "by": {
+  "doctor/cause-externe": {
+   "ok": 1,
+   "n": 2
+  },
+  "doctor/bug-interne": {
+   "ok": 1,
+   "n": 2
+  },
+  "doctor/historique": {
+   "ok": 1,
+   "n": 2
+  },
+  "doctor/attente-normale": {
+   "ok": 2,
+   "n": 3
+  },
+  "doctor/anti-bot": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/mesure-perimee": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/choix-mesure": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/victoires": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/exploration": {
+   "ok": 0,
+   "n": 1
+  }
+ },
+ "rows": [
+  {
+   "kind": "doctor",
+   "id": "v2-inactivity-loop",
+   "category": "cause-externe",
+   "expect": [
+    "alerter",
+    "pause"
+   ],
+   "got": "alerter",
+   "ok": true,
+   "ms": 22982,
+   "why": "le message indique que la place est libérée, ce qui suggère un problème temporaire lié au déploiement du site RpgMasters V2. Aucune action ne change le statut actuel, donc il vaut mieux alerter pour éviter une boucle inutile."
+  },
+  {
+   "kind": "doctor",
+   "id": "frozen-victory",
+   "category": "bug-interne",
+   "expect": [
+    "f5",
+    "zone"
+   ],
+   "got": "f5",
+   "ok": true,
+   "ms": 9250,
+   "why": "le bot a déjà tenté un F5 mais sans succès. Un redémarrage du site peut aider à relancer la boucle."
+  },
+  {
+   "kind": "doctor",
+   "id": "history-says-zone",
+   "category": "historique",
+   "expect": [
+    "zone"
+   ],
+   "got": "pause",
+   "ok": false,
+   "ms": 11001,
+   "why": "Le bot est peut-être entré dans une boucle d’inactivité après la victoire, où il attend sans effectuer de actions. Essayer de mettre le bot en pause pour voir si cela résout le problème."
+  },
+  {
+   "kind": "doctor",
+   "id": "server-queue",
+   "category": "attente-normale",
+   "expect": [
+    "attendre"
+   ],
+   "got": "attendre",
+   "ok": true,
+   "ms": 8444,
+   "why": "la place dans la file d'attaque arrive progressivement et ne peut être accélérée par des actions sur la page"
+  },
+  {
+   "kind": "doctor",
+   "id": "presence-test",
+   "category": "anti-bot",
+   "expect": [
+    "alerter"
+   ],
+   "got": "alerter",
+   "ok": true,
+   "ms": 8552,
+   "why": "la page demande une action spécifique qui n'a pas été effectuée par le bot, indiquant un test de présence anti-bot."
+  },
+  {
+   "kind": "doctor",
+   "id": "rate-limit-429",
+   "category": "attente-normale",
+   "expect": [
+    "attendre",
+    "pause"
+   ],
+   "got": "pause",
+   "ok": true,
+   "ms": 9971,
+   "why": "La page indique une limite de taux d'envois (429) et demande de ralentir les requêtes. Pause permettra au serveur de se reposer avant de continuer."
+  },
+  {
+   "kind": "doctor",
+   "id": "defeat-streak",
+   "category": "bug-interne",
+   "expect": [
+    "zone",
+    "deck"
+   ],
+   "got": "pause",
+   "ok": false,
+   "ms": 11282,
+   "why": "Il est possible que le serveur rencontre des problèmes temporaires, une pause permettrait au bot de reprendre ses opérations sans trop d'interrompt la progression."
+  },
+  {
+   "kind": "doctor",
+   "id": "f5-failed-twice-no-history",
+   "category": "historique",
+   "expect": [
+    "aventure",
+    "alerter",
+    "pause"
+   ],
+   "got": "alerter",
+   "ok": true,
+   "ms": 13642,
+   "why": "Le bot est bloqué sur une étape de l'aventure et les tentatives de rechargement n'ont pas eu d'effet. Cette situation pourrait être due à un problème technique du site ou à un bug spécifique, nécessitant une intervention manuelle pour résolution."
+  },
+  {
+   "kind": "doctor",
+   "id": "site-update-renamed",
+   "category": "cause-externe",
+   "expect": [
+    "site",
+    "alerter"
+   ],
+   "got": "attendre",
+   "ok": false,
+   "ms": 11858,
+   "why": "Le déploiement du site peut causer des instabilités temporaires, il est préférable d'attendre que le système se stabilise avant de réessayer."
+  },
+  {
+   "kind": "doctor",
+   "id": "energy-empty",
+   "category": "attente-normale",
+   "expect": [
+    "attendre"
+   ],
+   "got": "pause",
+   "ok": false,
+   "ms": 9337,
+   "why": "Le bot n'a pas d'énergie pour attaquer et le statut combat indique qu'il ne peut pas engager de nouvelles batailles sans recharge."
+  },
+  {
+   "kind": "zone",
+   "id": "stale-measure-trap",
+   "category": "mesure-perimee",
+   "expect": [
+    "A",
+    "B"
+   ],
+   "got": "A",
+   "ok": true,
+   "ms": 10006,
+   "why": "La Jungle obscure est mesurée à votre niveau actuel et a des victoires stables, tandis que les autres options sont soit verrouillées, soit datées."
+  },
+  {
+   "kind": "zone",
+   "id": "better-measured",
+   "category": "choix-mesure",
+   "expect": [
+    "B"
+   ],
+   "got": "B",
+   "ok": true,
+   "ms": 7901,
+   "why": "La zone Tronc de l'arbre Hakam offre un taux d'XP par minute beaucoup plus élevé que les autres options, bien que la victoire soit moins probable."
+  },
+  {
+   "kind": "zone",
+   "id": "too-hard",
+   "category": "victoires",
+   "expect": [
+    "A"
+   ],
+   "got": "A",
+   "ok": true,
+   "ms": 5714,
+   "why": "La zone de Feudala a un taux de victoire plus élevé et est moins risquée que Cimetiere de Grobe."
+  },
+  {
+   "kind": "zone",
+   "id": "unmeasured-harder",
+   "category": "exploration",
+   "expect": [
+    "B"
+   ],
+   "got": "A",
+   "ok": false,
+   "ms": 7825,
+   "why": "Lac Gélu 130-140 a des victoires stables et un taux d'XP élevé, tandis que Berceau d'Alma n'a pas été mesurée à ce niveau."
+  }
+ ]
+}

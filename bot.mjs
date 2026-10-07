@@ -1,8 +1,10 @@
 import { chromium } from 'playwright';
-import { appendFileSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync, existsSync, statSync, renameSync, copyFileSync } from 'node:fs';
 import { adviseZone, pickBestMeasured, isCurrent } from './zone-advisor.mjs';
-import { choose, explain, converse, diagnose, ORDERS, status as llmStatus } from './llm.mjs';
+import { choose, explain, converse, diagnose, ORDERS, configure as configureAI, status as llmStatus } from './ai/llm.mjs';
+import { DOCTOR_RULES } from './knowledge/rules.mjs';
 import { pickHeal } from './heal.mjs';
+import { remember } from './ai/retrieve.mjs';
 import { exec } from 'node:child_process';
 import http from 'node:http';
 import dns from 'node:dns/promises';
@@ -71,6 +73,7 @@ const toInbox = (line) => {
   appendFileSync('dump/inbox.jsonl', JSON.stringify(ev) + '\n');
   (S.inbox ??= []).unshift(ev); S.inbox.length = Math.min(S.inbox.length, 30);
 };
+configureAI({ preRules: DOCTOR_RULES }); // regles certaines du jeu, appliquees avant le modele
 const recentLog = []; // memoire courte pour le medecin (doctor) : les 300 dernieres lignes avec leur heure
 const log = (line) => { const l = `${new Date().toISOString()} ${line}`; console.log(l); appendFileSync('bot.log', l + '\n'); recentLog.push({ t: Date.now(), line }); if (recentLog.length > 300) recentLog.shift(); try { toInbox(line); } catch {} push(); };
 // temps reel : chaque client du tableau de bord garde un flux SSE ouvert ; push() regroupe les envois (max ~5/s)
@@ -104,8 +107,27 @@ const snapshot = () => ({ now: Date.now(), ver: pageVer(), S, CFG, net: netView(
 setInterval(push, 1000); // comptes a rebours, uptime, minutes qui glissent
 // etat utile entre deux redemarrages (arene, boss, deck, energie, dernieres actions, decisions)
 const KEEP = ['llmLog', 'passLog', 'zoneReq', 'ownScore', 'equipLog', 'hdvBought', 'rushAsc', 'ascBest', 'seenAnnouncements', 'maintenanceUntil', 'abyssSeen', 'abyssRun', 'actRes', 'siteScanPending', 'levelHist', 'huntLeft', 'advBlockedUntil', 'arenaFoe', 'stats', 'learn', 'hints', 'worn', 'hdvBrokenUntil', 'siteMap', 'dpl', 'forge', 'xpHardLog', 'arena', 'boss', 'deck', 'elem', 'energy', 'energyAt', 'energyMax','emptySlots', 'last', 'decisions', 'rings'];
-try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
-if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
+// Etat persistant : ecriture atomique (fichier temporaire puis renommage : jamais de state.json coupe en deux), copie
+// de secours state.json.bak verifiee toutes les heures, et au demarrage repli sur la copie si state.json est illisible
+// ou vide (07/10 : un state.json vide par une ecriture externe avait tout fait perdre).
+const loadState = (f) => { try { const j = JSON.parse(readFileSync(f, 'utf8')); return j && typeof j === 'object' && Object.keys(j).length ? j : null; } catch { return null; } };
+{
+  const main = loadState('state.json'), bak = main ? null : loadState('state.json.bak');
+  if (main) Object.assign(S, main);
+  else if (bak) { Object.assign(S, bak); console.log('state.json illisible : repris depuis state.json.bak'); }
+}
+const saveState = () => {
+  const json = JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])));
+  writeFileSync('state.json.tmp', json);
+  renameSync('state.json.tmp', 'state.json');
+};
+let lastBak = 0;
+if (process.argv[2] !== 'test') setInterval(() => {
+  try {
+    saveState();
+    if (Date.now() - lastBak > 3600000 && loadState('state.json')) { copyFileSync('state.json', 'state.json.bak'); lastBak = Date.now(); }
+  } catch {}
+}, 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
 
 // Locators auto-reparants (idee Stagehand, version heuristique sans IA) pour les boutons de PROGRESSION : on cherche
@@ -178,6 +200,7 @@ function reflect() {
     const R = (((S.learn ??= {}).doctor ??= {})[p.key] ??= {})[p.order] ??= { ok: 0, ko: 0, text: p.text };
     ok ? R.ok++ : R.ko++;
     log(`REFLEXION ordre ${p.order} sur "${p.text.slice(0, 80)}" : ${ok ? 'symptome disparu' : 'symptome toujours la'} (${R.ok} ok / ${R.ko} echec)`);
+    try { remember({ symptom: p.text, clues: p.clues ?? '', order: p.order, outcome: ok ? 'gueri' : 'sans effet', why: 'verifie 2 min apres par le bot' }); } catch {}
     learned = true;
     return false;
   });
@@ -222,7 +245,7 @@ async function runDoctor() {
     if (order !== 'attendre' && tried.filter((o) => o === order).length >= 2) order = 'alerter'; // deja donne 2 fois sans effet
     if (!allowed.includes(order) && order !== 'alerter') order = 'attendre'; // ceinture et bretelles : jamais hors liste
     tried.push(order);
-    if (order !== 'attendre') doctor.pending.push({ key: s.key, text: s.text, order, at: Date.now() }); // verifie dans 2 min (reflect)
+    if (order !== 'attendre') doctor.pending.push({ key: s.key, text: s.text, order, at: Date.now(), clues: `${pageText.split('\n').slice(0, 3).join(' ').slice(0, 160)} ; ${recentLog.slice(-2).map((x) => x.line).join(' ; ').slice(0, 160)}` }); // verifie dans 2 min (reflect)
     (S.llmLog ??= []).unshift({ t: Date.now(), point: 'medecin', symptom: s.text, llm: order, diagnostic: d.diagnostic, conf: d.confidence, reason: d.reason, skill: !!skill, ms: Date.now() - t0 });
     S.llmLog.length = Math.min(S.llmLog.length, 100);
     log(`MEDECIN ${s.text} -> ${d.diagnostic} -> ordre ${order} (confiance ${Math.round(d.confidence * 100)} %)`);

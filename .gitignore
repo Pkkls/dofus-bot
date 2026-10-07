@@ -9,3 +9,7 @@ config.json
 dump/
 *.png
 ring-detail.txt
+state.json.bak
+state.json.tmp
+knowledge/.embeddings.json
+knowledge/learned.kb
