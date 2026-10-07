@@ -2,6 +2,8 @@ import { chromium } from 'playwright';
 import { appendFileSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { exec } from 'node:child_process';
 import http from 'node:http';
+import dns from 'node:dns/promises';
+import tls from 'node:tls';
 
 const BASE = 'https://dofusmasters.houk.fr', COMBAT = BASE + '/combat';
 const rand = (a, b) => a + Math.random() * Math.max(0, b - a);
@@ -1187,11 +1189,39 @@ const readHeader = (text) => {
 };
 function startDashboard(page) {
   let shot = { t: 0, buf: null, p: null };
+  const HOST = new URL(BASE).hostname;
+  let netCache = { t: 0, data: null, p: null };
+  const tlsInfo = (host) => new Promise((resolve) => { // lit le certificat presente sur le 443 (le port du service, deja utilise)
+    const t0 = Date.now();
+    const s = tls.connect({ host, port: 443, servername: host, timeout: 8000 }, () => {
+      const c = s.getPeerCertificate();
+      resolve({ connectMs: Date.now() - t0, proto: s.getProtocol?.() ?? null, issuer: c.issuer?.O || c.issuer?.CN || null, subject: c.subject?.CN || null, validFrom: c.valid_from || null, validTo: c.valid_to || null, alt: (c.subjectaltname || '').replace(/DNS:/g, '').split(', ').filter(Boolean).slice(0, 8) });
+      s.end();
+    });
+    s.on('error', (e) => resolve({ error: e.message })); s.on('timeout', () => { s.destroy(); resolve({ error: 'timeout' }); });
+  });
+  async function netinfo() { // DNS + reverse + cert, cache 30 s (une poignee de main au plus par demi-minute)
+    if (netCache.data && Date.now() - netCache.t < 30000) return netCache.data;
+    if (netCache.p) return netCache.p;
+    netCache.p = (async () => {
+      const root = HOST.split('.').slice(-2).join('.');
+      const o = { host: HOST, dpl: S.dpl ?? null, at: Date.now() };
+      o.a = await dns.resolve4(HOST).catch(() => []);
+      o.aaaa = await dns.resolve6(HOST).catch(() => []);
+      o.ptr = o.a[0] ? await dns.reverse(o.a[0]).catch(() => []) : [];
+      o.ns = await dns.resolveNs(root).catch(() => []);
+      o.tls = await tlsInfo(HOST);
+      netCache = { t: Date.now(), data: o, p: null };
+      return o;
+    })();
+    return netCache.p;
+  }
   http.createServer(async (req, res) => {
     const send = (code, type, body) => { res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' }); res.end(body); };
     try {
       if (req.url === '/') return send(200, 'text/html; charset=utf-8', readFileSync('dashboard.html'));
       if (req.url === '/api/state') return send(200, 'application/json', JSON.stringify(snapshot()));
+      if (req.url === '/api/netinfo') return send(200, 'application/json', JSON.stringify(await netinfo())); // serveur du jeu : DNS, reverse, cert TLS (passif)
       // debug lecture seule : texte + controles de la page courante du bot (sans la toucher)
       if (req.url === '/api/dom') return send(200, 'text/plain; charset=utf-8', page.url() + '\n\n' + (await page.locator('main').innerText().catch(() => '')) + '\n\n=== CONTROLS\n' + (await page.locator('main').locator('button, a, input, select, label').evaluateAll((els) => els.map((e) => `${e.tagName}${e.type ? '[' + e.type + ']' : ''}${e.checked ? ' [x]' : ''}${e.disabled ? ' [disabled]' : ''} "${(e.innerText || e.value || '').replace(/\s+/g, ' ').slice(0, 80)}" ${e.title || e.getAttribute('aria-label') || ''} .${(e.className || '').toString().slice(0, 60)}`).join('\n')).catch((er) => er.message)));
       if (req.url === '/api/events') {

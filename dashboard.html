@@ -166,6 +166,7 @@ button { font: inherit; color: inherit; }
 .netgrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-3) var(--space-4); }
 .netgrid .k { color: var(--text-2); font-size: var(--fs-xs); }
 .netgrid .v { font-size: var(--fs-lg); font-weight: 650; }
+.netgrid .v.t { font-size: var(--fs-sm); font-weight: 600; word-break: break-word; }
 #n-hist { width: 100%; height: 56px; display: block; margin-top: var(--space-4); }
 
 /* ===== Flux (decisions, tours) ===== */
@@ -492,6 +493,20 @@ details[open].card > summary .chev { transform: rotate(180deg); }
           <dt>Combats, derniere heure</dt><dd id="p-rate" class="num">-</dd>
         </dl></div>
       </section>
+      <section class="card span-c2" id="srvcard">
+        <h2 class="card-h"><svg class="i"><use href="#i-wifi"/></svg>Serveur du jeu<span class="aside" id="srv-host">-</span></h2>
+        <div class="card-b">
+          <div class="netgrid">
+            <div><div class="k">IPv4</div><div class="v num" id="srv-ip">-</div></div>
+            <div><div class="k">Reverse DNS</div><div class="v t" id="srv-ptr">-</div></div>
+            <div><div class="k">Latence TLS</div><div class="v num" id="srv-lat">-</div></div>
+            <div><div class="k">Protocole</div><div class="v t" id="srv-proto">-</div></div>
+            <div><div class="k">Certificat</div><div class="v t" id="srv-cert">-</div></div>
+            <div><div class="k">Deploiement</div><div class="v t" id="srv-dpl">-</div></div>
+          </div>
+          <div class="hint" id="srv-more"></div>
+        </div>
+      </section>
       <section class="card span-c2" id="netcard">
         <h2 class="card-h"><svg class="i"><use href="#i-wifi"/></svg>Reseau vers le serveur<span class="aside">derniere minute</span></h2>
         <div class="card-b">
@@ -679,6 +694,29 @@ function renderNet(n, cap) {
   $('n-hist').innerHTML = s;
 }
 $('netchip').onclick = () => $('netcard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+/* ---------- serveur du jeu : DNS, reverse, cert TLS (passif, /api/netinfo) ---------- */
+async function pollNet() {
+  let n; try { n = await (await fetch('/api/netinfo')).json(); } catch { return; }
+  const T = n.tls ?? {};
+  $('srv-host').textContent = n.host ?? '-';
+  $('srv-ip').textContent = n.a?.[0] ?? '-';
+  $('srv-ptr').textContent = n.ptr?.[0] ?? '(aucun)';
+  $('srv-lat').textContent = T.connectMs != null ? T.connectMs + ' ms' : (T.error ?? '-');
+  $('srv-proto').textContent = T.proto ?? '-';
+  $('srv-cert').textContent = T.issuer ?? (T.error ? '-' : 'auto-signe');
+  $('srv-dpl').textContent = n.dpl ?? '-';
+  const exp = T.validTo ? new Date(T.validTo) : null;
+  const d = (exp && !isNaN(exp)) ? Math.round((exp - Date.now()) / 86400000) : null;
+  $('srv-more').textContent = [
+    n.a?.length > 1 ? `IPv4 : ${n.a.join(', ')}` : null,
+    n.aaaa?.length ? `IPv6 : ${n.aaaa[0]}` : null,
+    n.ns?.length ? `NS : ${n.ns.slice(0, 2).join(', ')}` : null,
+    d != null ? `cert valide ${d} j (${exp.toLocaleDateString('fr-FR')})` : null,
+    T.alt?.length ? `SAN : ${T.alt.join(', ')}` : null,
+  ].filter(Boolean).join(' · ');
+}
+pollNet(); setInterval(pollNet, 30000);
 
 /* ---------- rendu principal ---------- */
 const renderDecisions = { key: '' }, renderTurns = { key: '' };
