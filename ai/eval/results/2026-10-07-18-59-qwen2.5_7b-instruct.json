@@ -1,0 +1,236 @@
+{
+ "model": "qwen2.5:7b-instruct",
+ "score": 13,
+ "total": 14,
+ "msAvg": 9985,
+ "by": {
+  "doctor/cause-externe": {
+   "ok": 2,
+   "n": 2
+  },
+  "doctor/bug-interne": {
+   "ok": 2,
+   "n": 2
+  },
+  "doctor/historique": {
+   "ok": 1,
+   "n": 2
+  },
+  "doctor/attente-normale": {
+   "ok": 3,
+   "n": 3
+  },
+  "doctor/anti-bot": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/mesure-perimee": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/choix-mesure": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/victoires": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/exploration": {
+   "ok": 1,
+   "n": 1
+  }
+ },
+ "rows": [
+  {
+   "kind": "doctor",
+   "id": "v2-inactivity-loop",
+   "category": "cause-externe",
+   "expect": [
+    "alerter",
+    "pause"
+   ],
+   "got": "alerter",
+   "ok": true,
+   "rule": null,
+   "ms": 16584,
+   "why": "Il est crucial de prévenir l'utilisateur du problème afin qu'il puisse reprendre rapidement les commandes du bot et éviter toute interruption inutile."
+  },
+  {
+   "kind": "doctor",
+   "id": "frozen-victory",
+   "category": "bug-interne",
+   "expect": [
+    "f5",
+    "zone"
+   ],
+   "got": "f5",
+   "ok": true,
+   "rule": null,
+   "ms": 18752,
+   "why": "Le bot n'a pas pu quitter la page de victoire par le biais du bouton 'Retour a la chasse', ce qui suggère que l'interface peut être bloquée ou que le code du jeu ne permet pas un clic automatique. Un rechargement de la page (F5) pourrait forcer une redétection des éléments et permettre au bot de qui"
+  },
+  {
+   "kind": "doctor",
+   "id": "history-says-zone",
+   "category": "historique",
+   "expect": [
+    "zone"
+   ],
+   "got": "zone",
+   "ok": true,
+   "rule": null,
+   "ms": 16161,
+   "why": "L'historique indique que le changement de zone a déjà résolu ce problème deux fois. Il est donc logique d'essayer cette solution à nouveau."
+  },
+  {
+   "kind": "doctor",
+   "id": "server-queue",
+   "category": "attente-normale",
+   "expect": [
+    "attendre"
+   ],
+   "got": "attendre",
+   "ok": true,
+   "rule": "server-queue",
+   "ms": 0,
+   "why": "regle fixe \"server-queue\" (sans IA)"
+  },
+  {
+   "kind": "doctor",
+   "id": "presence-test",
+   "category": "anti-bot",
+   "expect": [
+    "alerter"
+   ],
+   "got": "alerter",
+   "ok": true,
+   "rule": "presence-test",
+   "ms": 0,
+   "why": "regle fixe \"presence-test\" (sans IA)"
+  },
+  {
+   "kind": "doctor",
+   "id": "rate-limit-429",
+   "category": "attente-normale",
+   "expect": [
+    "attendre",
+    "pause"
+   ],
+   "got": "attendre",
+   "ok": true,
+   "rule": null,
+   "ms": 16513,
+   "why": "La page indique clairement que le nombre de requêtes est trop élevé, et les messages 'RATE LIMIT 429 Slow down' répétés suggèrent une rate-limitation du serveur. Attendre permet au limiteur du site de se vider naturellement."
+  },
+  {
+   "kind": "doctor",
+   "id": "defeat-streak",
+   "category": "bug-interne",
+   "expect": [
+    "zone",
+    "deck"
+   ],
+   "got": "zone",
+   "ok": true,
+   "rule": null,
+   "ms": 18963,
+   "why": "Les défaites répétées suggèrent que les monstres de la zone actuelle sont trop forts pour le bot actuellement. En changeant de zone, on peut trouver des monstres plus adaptés au niveau du bot et à sa configuration actuelle."
+  },
+  {
+   "kind": "doctor",
+   "id": "f5-failed-twice-no-history",
+   "category": "historique",
+   "expect": [
+    "aventure",
+    "alerter",
+    "pause"
+   ],
+   "got": "attendre",
+   "ok": false,
+   "rule": null,
+   "ms": 17909,
+   "why": "Le bot a déjà essayé de forcer le rechargement de la page avec F5, mais cela n'a pas eu d'effet. Attendre permet de donner au serveur du temps pour résoudre le problème sans aggraver la situation."
+  },
+  {
+   "kind": "doctor",
+   "id": "site-update-renamed",
+   "category": "cause-externe",
+   "expect": [
+    "site",
+    "alerter"
+   ],
+   "got": "site",
+   "ok": true,
+   "rule": "site-update-broke-buttons",
+   "ms": 0,
+   "why": "regle fixe \"site-update-broke-buttons\" (sans IA)"
+  },
+  {
+   "kind": "doctor",
+   "id": "energy-empty",
+   "category": "attente-normale",
+   "expect": [
+    "attendre"
+   ],
+   "got": "attendre",
+   "ok": true,
+   "rule": "no-energy",
+   "ms": 0,
+   "why": "regle fixe \"no-energy\" (sans IA)"
+  },
+  {
+   "kind": "zone",
+   "id": "stale-measure-trap",
+   "category": "mesure-perimee",
+   "expect": [
+    "A",
+    "B"
+   ],
+   "got": "A",
+   "ok": true,
+   "rule": null,
+   "ms": 12314,
+   "why": "La Jungle obscure est mesurée à votre niveau actuel et offre déjà un bon taux d'XP par minute, tandis que la Clairiere de Floribonde n'a pas été testée et la Village des Zoths est verrouillé."
+  },
+  {
+   "kind": "zone",
+   "id": "better-measured",
+   "category": "choix-mesure",
+   "expect": [
+    "B"
+   ],
+   "got": "B",
+   "ok": true,
+   "rule": null,
+   "ms": 8894,
+   "why": "La Tronc de l'arbre Hakam offre un taux d'XP par minute beaucoup plus élevé que les autres zones, bien que le pourcentage de victoires soit légèrement inférieur à la zone actuelle."
+  },
+  {
+   "kind": "zone",
+   "id": "too-hard",
+   "category": "victoires",
+   "expect": [
+    "A"
+   ],
+   "got": "A",
+   "ok": true,
+   "rule": null,
+   "ms": 6964,
+   "why": "La zone Feudala 132-150 a un taux de victoire plus élevé, ce qui réduit le risque de perte d'objets et maintient une progression stable."
+  },
+  {
+   "kind": "zone",
+   "id": "unmeasured-harder",
+   "category": "exploration",
+   "expect": [
+    "B"
+   ],
+   "got": "B",
+   "ok": true,
+   "rule": null,
+   "ms": 6730,
+   "why": "La zone Berceau d'Alma n'a pas encore été mesurée à mon niveau, mais elle pourrait valoir mieux et mérite d'être testée."
+  }
+ ]
+}

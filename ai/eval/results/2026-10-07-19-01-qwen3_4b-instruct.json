@@ -1,0 +1,236 @@
+{
+ "model": "qwen3:4b-instruct",
+ "score": 6,
+ "total": 14,
+ "msAvg": 9665,
+ "by": {
+  "doctor/cause-externe": {
+   "ok": 1,
+   "n": 2
+  },
+  "doctor/bug-interne": {
+   "ok": 0,
+   "n": 2
+  },
+  "doctor/historique": {
+   "ok": 0,
+   "n": 2
+  },
+  "doctor/attente-normale": {
+   "ok": 2,
+   "n": 3
+  },
+  "doctor/anti-bot": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/mesure-perimee": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/choix-mesure": {
+   "ok": 0,
+   "n": 1
+  },
+  "zone/victoires": {
+   "ok": 1,
+   "n": 1
+  },
+  "zone/exploration": {
+   "ok": 0,
+   "n": 1
+  }
+ },
+ "rows": [
+  {
+   "kind": "doctor",
+   "id": "v2-inactivity-loop",
+   "category": "cause-externe",
+   "expect": [
+    "alerter",
+    "pause"
+   ],
+   "got": "null",
+   "ok": false,
+   "rule": null,
+   "ms": 23702,
+   "why": ""
+  },
+  {
+   "kind": "doctor",
+   "id": "frozen-victory",
+   "category": "bug-interne",
+   "expect": [
+    "f5",
+    "zone"
+   ],
+   "got": "null",
+   "ok": false,
+   "rule": null,
+   "ms": 15187,
+   "why": ""
+  },
+  {
+   "kind": "doctor",
+   "id": "history-says-zone",
+   "category": "historique",
+   "expect": [
+    "zone"
+   ],
+   "got": "null",
+   "ok": false,
+   "rule": null,
+   "ms": 15437,
+   "why": ""
+  },
+  {
+   "kind": "doctor",
+   "id": "server-queue",
+   "category": "attente-normale",
+   "expect": [
+    "attendre"
+   ],
+   "got": "attendre",
+   "ok": true,
+   "rule": "server-queue",
+   "ms": 0,
+   "why": "regle fixe \"server-queue\" (sans IA)"
+  },
+  {
+   "kind": "doctor",
+   "id": "presence-test",
+   "category": "anti-bot",
+   "expect": [
+    "alerter"
+   ],
+   "got": "alerter",
+   "ok": true,
+   "rule": "presence-test",
+   "ms": 0,
+   "why": "regle fixe \"presence-test\" (sans IA)"
+  },
+  {
+   "kind": "doctor",
+   "id": "rate-limit-429",
+   "category": "attente-normale",
+   "expect": [
+    "attendre",
+    "pause"
+   ],
+   "got": "null",
+   "ok": false,
+   "rule": null,
+   "ms": 14869,
+   "why": ""
+  },
+  {
+   "kind": "doctor",
+   "id": "defeat-streak",
+   "category": "bug-interne",
+   "expect": [
+    "zone",
+    "deck"
+   ],
+   "got": "null",
+   "ok": false,
+   "rule": null,
+   "ms": 15558,
+   "why": ""
+  },
+  {
+   "kind": "doctor",
+   "id": "f5-failed-twice-no-history",
+   "category": "historique",
+   "expect": [
+    "aventure",
+    "alerter",
+    "pause"
+   ],
+   "got": "null",
+   "ok": false,
+   "rule": null,
+   "ms": 15854,
+   "why": ""
+  },
+  {
+   "kind": "doctor",
+   "id": "site-update-renamed",
+   "category": "cause-externe",
+   "expect": [
+    "site",
+    "alerter"
+   ],
+   "got": "site",
+   "ok": true,
+   "rule": "site-update-broke-buttons",
+   "ms": 0,
+   "why": "regle fixe \"site-update-broke-buttons\" (sans IA)"
+  },
+  {
+   "kind": "doctor",
+   "id": "energy-empty",
+   "category": "attente-normale",
+   "expect": [
+    "attendre"
+   ],
+   "got": "attendre",
+   "ok": true,
+   "rule": "no-energy",
+   "ms": 0,
+   "why": "regle fixe \"no-energy\" (sans IA)"
+  },
+  {
+   "kind": "zone",
+   "id": "stale-measure-trap",
+   "category": "mesure-perimee",
+   "expect": [
+    "A",
+    "B"
+   ],
+   "got": "A",
+   "ok": true,
+   "rule": null,
+   "ms": 10462,
+   "why": "La zone Jungle obscure est mesurée à mon niveau, offre un bon ratio XP/minute avec 100 % de victoires, et est donc la plus fiable et sûre parmi les options. La zone B n'a jamais été mesurée à mon niveau et risque d'être trop dure, tandis que C est perimee car mesurée à un niveau différent (139) et a"
+  },
+  {
+   "kind": "zone",
+   "id": "better-measured",
+   "category": "choix-mesure",
+   "expect": [
+    "B"
+   ],
+   "got": "A",
+   "ok": false,
+   "rule": null,
+   "ms": 7593,
+   "why": "Feudala 132-150 offre le meilleur rapport XP par minute sans dépasser le seuil de victoires critique, et son niveau est proche de celui du joueur (140), tandis que Tronc de l'arbre Hakam est trop difficile (95 % victoires) et Lac Géle est trop faible en XP."
+  },
+  {
+   "kind": "zone",
+   "id": "too-hard",
+   "category": "victoires",
+   "expect": [
+    "A"
+   ],
+   "got": "A",
+   "ok": true,
+   "rule": null,
+   "ms": 9161,
+   "why": "Bien que Cimetiere de Grobe offre plus d'XP par minute, ses victoires sont très faibles (55 %) et le niveau requis (152-160) est bien au-dessus de notre niveau actuel (140), rendant le succès peu probable. Feudala, bien que moins performante en XP, est à un niveau proche (132-150) et offre une victo"
+  },
+  {
+   "kind": "zone",
+   "id": "unmeasured-harder",
+   "category": "exploration",
+   "expect": [
+    "B"
+   ],
+   "got": "A",
+   "ok": false,
+   "rule": null,
+   "ms": 7492,
+   "why": "La zone Lac gele 130-140 a été mesurée à mon niveau et offre 900000 XP/min avec 100 % de victoires, ce qui est fiable et sûr ; la zone Berceau d'Alma n'a jamais été mesurée à mon niveau, donc son niveau de difficulté est inconnu et risque de dépasser la capacité du perso."
+  }
+ ]
+}
