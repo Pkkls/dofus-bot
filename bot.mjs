@@ -826,6 +826,12 @@ async function allZones(page) {
   const seen = new Set();
   const fresh = (await page.locator('a[href^="/chasse?zone="]').evaluateAll((els) => els.map((e) => [e.getAttribute('href'), e.innerText])))
     .filter(([h]) => !seen.has(h) && seen.add(h)).map(([h, t]) => { const r = zoneRange(t); return [h, r?.[1] ?? 0, t.split('\n')[0], r?.[0] ?? 0]; }).filter(([, m]) => m); // [href, niv max, nom, niv min]
+  // zones verrouillees : la carte affiche "Niveau N requis" (en rouge). Lu ici, une page, au lieu d'ouvrir chaque
+  // zone pour se faire refuser ("Zone reservee aux joueurs de niveau N et plus") : c'etait une rafale de requetes
+  const reqs = await page.locator('a[href^="/chasse?zone="]').evaluateAll((els) => els.map((e) => [e.getAttribute('href'), +(e.innerText.match(/Niveau (\d+) requis/)?.[1] ?? 0)]));
+  S.zoneReq ??= {};
+  for (const [h, n] of reqs) { if (n) S.zoneReq[h] = n; else delete S.zoneReq[h]; }
+  decide(`Zones : ${fresh.length} lues, ${reqs.filter(([, n]) => n > (S.level ?? 0)).length} verrouillees pour mon niveau ${S.level}`);
   const known = new Map((ZONES ?? []).map((z) => [z[0], z]));
   for (const z of fresh) known.set(z[0], z);
   ZONES = [...known.values()].sort((a, b) => a[1] - b[1]);
@@ -882,7 +888,7 @@ async function attackGroup(page, zone, maxRank) {
   await page.goto(BASE + zone);
   await page.getByText(/Groupe 1|réservée aux joueurs/).first().waitFor({ timeout: 20000 });
   const t = await page.locator('main').innerText();
-  const resv = t.match(/réservée aux joueurs de niveau (\d+)/);
+  const resv = t.match(/r[ée]serv[ée]e aux joueurs de niveau (\d+)/i);
   if (resv && (S.level ?? 0) < +resv[1]) { // trop haut pour moi (prestige, redemarrage) : zone de mon niveau
     log(`ZONE ${zone} reservee au niveau ${resv[1]} (moi ${S.level}) : je change de zone`);
     (S.zoneReq ??= {})[zone] = +resv[1];
@@ -1365,34 +1371,80 @@ async function buyEnergy(page, max = false, sold = false) {
   else log(`ENERGIE achat sans effet (${after?.e ?? '?'}/${j.max})`);
 }
 
-// Inventaire du site : pour chaque onglet du menu, boutons et listes (nombres masques), diff avec le releve precedent.
-// Le 1er releve sert de reference ; ensuite chaque nouvel onglet/bouton est signale (log MAJ SITE, decision, alerte) et la page sauvegardee.
+// Releve du site : parcours en largeur de tous les liens internes (menu, pages, liens dans les pages), et sur chaque
+// page clic de chaque onglet (role=tab, lecture seule : jamais un bouton d'action). Par page : titres, onglets et
+// boutons (nombres masques), texte dans dump/site_*.txt. Diff avec le releve precedent (dump/site-map.json, hors
+// state.json) -> dump/site-changes.txt, log MAJ SITE, decision, alerte.
+const SITE_MAX = 45;
+const SITE_SKIP = /deconnexion|logout|combat|\/api\/|mentions|zone=|item=|objet=|joueur=|perso=|id=|page=/i;
+const siteKey = (href) => {
+  const [path, q = ''] = href.split('#')[0].split('?');
+  const keep = q.split('&').filter((kv) => /^(toutes|tab|onglet|vue|mode|section)=/i.test(kv)).join('&'); // onglets en parametre, pas les identifiants
+  return path + (keep ? '?' + keep : '');
+};
+const siteFile = (p) => `dump/site${p === '/' ? '_accueil' : p.replace(/\W/g, '_')}.txt`;
 let siteScanDue = !!S.siteScanPending; // releve demande avant un redemarrage
 async function siteScan(page) {
-  await page.goto(BASE + '/');
-  await sleep(2500);
-  const nav = await page.locator('header a[href^="/"], nav a[href^="/"]').evaluateAll((els) => [...new Set(els.map((e) => e.getAttribute('href')))]).catch(() => []);
-  const map = {};
-  for (const p of nav.filter((x) => x !== '/' && !/deconnexion|logout|combat/i.test(x))) {
+  const seen = new Set(), queue = ['/'], map = {};
+  while (queue.length && Object.keys(map).length < SITE_MAX) {
+    const p = queue.shift();
+    if (seen.has(p)) continue;
+    seen.add(p);
     await page.goto(BASE + p).catch(() => {});
     await sleep(2500);
     const later = page.getByRole('button', { name: 'Plus tard', exact: true });
     if (await later.isVisible().catch(() => false)) await later.click().catch(() => {});
-    map[p] = await page.locator('main').locator('button, select, input').evaluateAll((els) => [...new Set(els.map((e) => (e.innerText || e.value || e.getAttribute('aria-label') || e.title || '').replace(/\s+/g, ' ').trim().replace(/\d[\d\s.,]*/g, '#').slice(0, 60)).filter((t) => t && t.length > 1))]).catch(() => []);
-    writeFileSync(`dump/site${p.replace(/\W/g, '_')}.txt`, await page.locator('main').innerText().catch(() => ''));
+    const read = () => page.evaluate(() => {
+      const main = document.querySelector('main') ?? document.body;
+      const txt = (e) => (e.innerText || e.value || e.getAttribute('aria-label') || e.title || '').replace(/\s+/g, ' ').trim().replace(/\d[\d\s.,]*/g, '#').slice(0, 60);
+      const uniq = (els) => [...new Set([...els].map(txt).filter((t) => t && t.length > 1))];
+      return {
+        links: [...document.querySelectorAll('a[href^="/"]')].map((a) => a.getAttribute('href')),
+        tabs: uniq(main.querySelectorAll('[role=tab]')),
+        heads: uniq(main.querySelectorAll('h1, h2, h3, h4, summary, legend, th')),
+        buttons: uniq(main.querySelectorAll('button:not([role=tab]), select, input')),
+      };
+    }).catch(() => ({ links: [], tabs: [], heads: [], buttons: [] }));
+    const r = await read();
+    let text = await page.locator('main').innerText().catch(() => '');
+    // onglets de la page : lecture seule, on clique et on lit ce qu'ils montrent
+    for (const name of r.tabs.slice(0, 10)) {
+      const tab = page.getByRole('tab', { name, exact: true }).first();
+      if (!(await tab.isVisible().catch(() => false))) continue;
+      await tab.click({ timeout: 3000 }).catch(() => {});
+      await sleep(900);
+      const t = await read();
+      r.heads.push(...t.heads.map((h) => `${name} > ${h}`));
+      r.buttons.push(...t.buttons.map((b) => `${name} > ${b}`));
+      r.links.push(...t.links);
+      text += `\n\n== onglet ${name} ==\n` + (await page.locator('main').innerText().catch(() => ''));
+    }
+    map[p] = { tabs: r.tabs, heads: [...new Set(r.heads)], buttons: [...new Set(r.buttons)] };
+    writeFileSync(siteFile(p), text);
+    for (const l of r.links) { if (SITE_SKIP.test(l)) continue; const k = siteKey(l); if (!seen.has(k) && !queue.includes(k)) queue.push(k); }
   }
-  const old = S.siteMap;
-  S.siteMap = map;
-  if (!old) { decide(`Site : releve de reference fait (${Object.keys(map).length} onglets)`); return; }
+  let old = null;
+  try { old = JSON.parse(readFileSync('dump/site-map.json', 'utf8')); } catch {}
+  if (old) writeFileSync('dump/site-map.prev.json', JSON.stringify(old));
+  writeFileSync('dump/site-map.json', JSON.stringify(map, null, 1));
+  S.siteMap = Object.fromEntries(Object.entries(map).map(([p, v]) => [p, v.buttons])); // ancien format, lu ailleurs
+  if (!old) { decide(`Site : releve de reference fait (${Object.keys(map).length} pages, onglets compris)`); log(`SITE releve de reference ${Object.keys(map).length} pages`); return; }
   const changes = [];
-  for (const [p, btns] of Object.entries(map)) {
-    if (!old[p]) changes.push(`nouvel onglet ${p}`);
-    else { const nb = btns.filter((b) => !old[p].includes(b)); if (nb.length) changes.push(`${p} : ${nb.slice(0, 8).join(', ')}`); }
+  for (const [p, v] of Object.entries(map)) {
+    const o = old[p];
+    if (!o) { changes.push(`nouvelle page ${p} : ${[...v.tabs, ...v.heads].slice(0, 6).join(', ')}`); continue; }
+    for (const k of ['tabs', 'heads', 'buttons']) {
+      const add = v[k].filter((x) => !o[k]?.includes(x)), del = (o[k] ?? []).filter((x) => !v[k].includes(x));
+      if (add.length) changes.push(`${p} ${k} + ${add.slice(0, 10).join(', ')}`);
+      if (del.length) changes.push(`${p} ${k} - ${del.slice(0, 10).join(', ')}`);
+    }
   }
-  if (!changes.length) { decide('Site mis a jour : aucun nouvel onglet ni bouton'); return; }
-  log(`MAJ SITE nouveautes : ${changes.join(' | ').slice(0, 600)}`);
-  decide(`Mise a jour du site : ${changes.join(' | ').slice(0, 400)} (pages dans dump/site_*.txt)`);
-  alert('mise a jour du site : nouveaux onglets/boutons, voir le tableau de bord');
+  for (const p of Object.keys(old)) if (!map[p]) changes.push(`page disparue ${p}`);
+  writeFileSync('dump/site-changes.txt', `${new Date().toISOString()} : ${changes.length} changement(s)\n` + changes.join('\n'));
+  if (!changes.length) { decide(`Site mis a jour : rien de nouveau sur ${Object.keys(map).length} pages`); return; }
+  log(`MAJ SITE ${changes.length} changement(s) : ${changes.join(' | ').slice(0, 600)}`);
+  decide(`Mise a jour du site : ${changes.length} changement(s), detail dans dump/site-changes.txt : ${changes.slice(0, 4).join(' | ').slice(0, 400)}`);
+  alert('mise a jour du site : nouveautes, voir dump/site-changes.txt');
 }
 
 // Forgemagie. Page lue a chaque visite (parseForge) : niveau du bouclier, orbes, quota du jour, cout et reussite annonces de l'essai.
@@ -2070,7 +2122,7 @@ while (true) {
     if (!xpHard && zone && !adventure && !climbDir && ++zoneCheck >= (rushing() ? 8 : 20)) {
       zoneCheck = 0;
       const Z = S.learn?.zones ?? {}, cur = Z[zone];
-      const best = Object.entries(Z).filter(([, z]) => z.n >= (rushing() ? 1 : 5) && z.win >= CFG.targetWin && Math.abs(z.lvl - S.level) <= 10).sort((a, b) => b[1].xpm - a[1].xpm)[0];
+      const best = Object.entries(Z).filter(([k, z]) => z.n >= (rushing() ? 1 : 5) && z.win >= CFG.targetWin && Math.abs(z.lvl - S.level) <= 10 && !((S.zoneReq?.[k] ?? 0) > S.level)).sort((a, b) => b[1].xpm - a[1].xpm)[0];
       if (best && best[0] !== zone && cur && best[1].xpm > 1.2 * cur.xpm) {
         decide(`Zone : ${best[0].split('=')[1]} rapporte ${Math.round(best[1].xpm)} XP/min contre ${Math.round(cur.xpm)} ici (victoires ${Math.round(best[1].win * 100)} %), j'y vais`);
         log(`ZONE meilleure XP/min ${best[0]} (${Math.round(best[1].xpm)} vs ${Math.round(cur.xpm)})`);
