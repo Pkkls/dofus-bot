@@ -232,6 +232,26 @@ details[open].card > summary .chev { transform: rotate(180deg); }
 
 /* ===== Responsive ===== */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* ===== Pages (onglets sous l'en-tete) ===== */
+.views { position: sticky; top: var(--header-h); z-index: 9; display: flex; gap: var(--space-1); padding: var(--space-2) var(--space-6) 0; background: var(--surface-page); border-bottom: 1px solid var(--border-subtle); overflow-x: auto; scrollbar-width: none; }
+.view-tab { display: inline-flex; align-items: center; gap: var(--space-2); height: 40px; padding: 0 var(--space-4); border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; white-space: nowrap; transition: color var(--dur-fast), border-color var(--dur-fast); }
+.view-tab:hover { color: var(--text-1); }
+.view-tab[aria-selected="true"] { color: var(--text-1); border-bottom-color: var(--accent); }
+.view-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius-sm); }
+.view-tab svg.i { color: currentColor; }
+.view-badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-pill); background: var(--warn-soft); color: var(--warn); font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+.view { display: flex; flex-direction: column; gap: var(--space-4); }
+.view[hidden] { display: none; }
+.auto-intro { margin: 0 0 var(--space-3); font-size: var(--fs-sm); }
+.auto-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-2) var(--space-4); font-size: var(--fs-sm); }
+.auto-list li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: var(--space-2); align-items: start; }
+.auto-list .k { color: var(--text-1); font-weight: 600; }
+.auto-list .d { color: var(--text-3); font-size: var(--fs-xs); }
+#auto-verdict.ok { color: var(--accent); background: var(--accent-soft); }
+#auto-verdict.no { color: var(--warn); background: var(--warn-soft); }
+/* mobile : l'en-tete passe en hauteur auto (plusieurs lignes), la barre d'onglets ne colle plus a 56 px mais defile */
+@media (max-width: 720px) { .views { position: static; padding: var(--space-2) var(--space-4) 0; } .view-tab { padding: 0 var(--space-3); } }
+
 /* ===== IA locale (journal + conversation) ===== */
 .ai-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--border-subtle); }
 .ai-stats > div { padding: var(--space-3) var(--space-4); min-width: 0; }
@@ -342,7 +362,15 @@ details[open].card > summary .chev { transform: rotate(180deg); }
   <div><b>Test de presence en attente.</b> <span>Clique sur le chiffre demande dans la fenetre Chromium du bot, elle vient de passer au premier plan.</span></div>
 </div>
 
+<nav class="views" role="tablist" aria-label="Pages du tableau de bord">
+  <button class="view-tab" id="tab-vue" role="tab" type="button" data-view="vue" aria-controls="view-vue" aria-selected="true"><svg class="i"><use href="#i-activity"/></svg>Vue d'ensemble</button>
+  <button class="view-tab" id="tab-ia" role="tab" type="button" data-view="ia" aria-controls="view-ia" aria-selected="false" tabindex="-1"><svg class="i"><use href="#i-bot"/></svg>IA<span class="view-badge num" id="tab-ia-badge" hidden></span></button>
+  <button class="view-tab" id="tab-jeu" role="tab" type="button" data-view="jeu" aria-controls="view-jeu" aria-selected="false" tabindex="-1"><svg class="i"><use href="#i-crown"/></svg>Jeu</button>
+  <button class="view-tab" id="tab-systeme" role="tab" type="button" data-view="systeme" aria-controls="view-systeme" aria-selected="false" tabindex="-1"><svg class="i"><use href="#i-sliders"/></svg>Systeme</button>
+</nav>
+
 <main class="page">
+<section class="view" id="view-vue" role="tabpanel" aria-labelledby="tab-vue" data-view="vue">
   <section class="kpis" aria-label="Vue d'ensemble">
     <div class="kpi"><div class="l"><svg class="i"><use href="#i-zap"/></svg>XP, 60 dernieres minutes</div><div class="v num c-ok" id="k-xph">-</div><svg class="spark" id="spark" viewBox="0 0 240 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
     <div class="kpi"><div class="l"><svg class="i"><use href="#i-trophy"/></svg>Taux de victoire</div><div class="v num" id="k-win">-</div><div class="s num" id="k-winS"></div></div>
@@ -385,6 +413,9 @@ details[open].card > summary .chev { transform: rotate(180deg); }
     </section>
   </div>
 
+</section>
+
+<section class="view" id="view-ia" role="tabpanel" aria-labelledby="tab-ia" data-view="ia" hidden>
   <div class="row">
     <section class="card feedcard tall" aria-labelledby="ai-title">
       <h2 class="card-h" id="ai-title"><svg class="i"><use href="#i-bot"/></svg>IA locale<span class="aside"><span class="pill offline" id="ai-status"><span class="dot"></span>verification</span></span></h2>
@@ -414,25 +445,11 @@ details[open].card > summary .chev { transform: rotate(180deg); }
     </section>
   </div>
 
-  <section class="group" aria-labelledby="g-goal">
-    <div class="group-h"><h2 id="g-goal">Objectif</h2><p>Feuille de route du mode rush prestige et descente des Abysses.</p></div>
-    <div class="bento">
-      <section class="card span-c2">
-        <h2 class="card-h"><svg class="i"><use href="#i-crown"/></svg>Feuille de route<span class="aside" id="r-goal"></span></h2>
-        <div class="card-b">
-          <div class="cards" id="r-steps"></div>
-          <div class="bar" role="progressbar" aria-label="Etape en cours" aria-valuemin="0" aria-valuemax="100" id="r-barWrap"><i id="r-bar"></i></div>
-          <div class="sub" id="r-now"></div>
-        </div>
-      </section>
-      <section class="card">
-        <h2 class="card-h"><svg class="i"><use href="#i-flag"/></svg>Abysses<span class="aside" id="a-rec"></span></h2>
-        <div class="card-b">
-          <div class="notes" id="a-run"></div>
-          <div class="sub">Choix les plus payants (etage moyen atteint)</div>
-          <div class="cards" id="a-picks"></div>
-        </div>
-      </section>
+  <section class="card" aria-labelledby="auto-title">
+    <h2 class="card-h" id="auto-title"><svg class="i"><use href="#i-shield"/></svg>Autonomie, 24 dernieres heures<span class="aside"><span class="tag" id="auto-verdict">-</span><button class="btn ghost" id="auto-refresh" type="button">Actualiser</button></span></h2>
+    <div class="card-b">
+      <p class="muted auto-intro">Le bot est declare autonome quand il tient tous ces seuils sur 24 h pleines, sans intervention humaine.</p>
+      <ul class="auto-list" id="auto-list" aria-live="polite"><li class="muted">calcul...</li></ul>
     </div>
   </section>
 
@@ -488,6 +505,31 @@ details[open].card > summary .chev { transform: rotate(180deg); }
       <section class="card feedcard short span-c3">
         <h2 class="card-h"><svg class="i"><use href="#i-swords"/></svg>Tours de combat<span class="aside" id="t-count"></span></h2>
         <div class="list" id="turns"></div>
+      </section>
+    </div>
+  </section>
+
+</section>
+
+<section class="view" id="view-jeu" role="tabpanel" aria-labelledby="tab-jeu" data-view="jeu" hidden>
+  <section class="group" aria-labelledby="g-goal">
+    <div class="group-h"><h2 id="g-goal">Objectif</h2><p>Feuille de route du mode rush prestige et descente des Abysses.</p></div>
+    <div class="bento">
+      <section class="card span-c2">
+        <h2 class="card-h"><svg class="i"><use href="#i-crown"/></svg>Feuille de route<span class="aside" id="r-goal"></span></h2>
+        <div class="card-b">
+          <div class="cards" id="r-steps"></div>
+          <div class="bar" role="progressbar" aria-label="Etape en cours" aria-valuemin="0" aria-valuemax="100" id="r-barWrap"><i id="r-bar"></i></div>
+          <div class="sub" id="r-now"></div>
+        </div>
+      </section>
+      <section class="card">
+        <h2 class="card-h"><svg class="i"><use href="#i-flag"/></svg>Abysses<span class="aside" id="a-rec"></span></h2>
+        <div class="card-b">
+          <div class="notes" id="a-run"></div>
+          <div class="sub">Choix les plus payants (etage moyen atteint)</div>
+          <div class="cards" id="a-picks"></div>
+        </div>
       </section>
     </div>
   </section>
@@ -554,6 +596,15 @@ details[open].card > summary .chev { transform: rotate(180deg); }
           <dt>Combats, derniere heure</dt><dd id="p-rate" class="num">-</dd>
         </dl></div>
       </section>
+    </div>
+  </section>
+
+</section>
+
+<section class="view" id="view-systeme" role="tabpanel" aria-labelledby="tab-systeme" data-view="systeme" hidden>
+  <section class="group" aria-labelledby="g-sys">
+    <div class="group-h"><h2 id="g-sys">Serveur et reseau</h2><p>Connexion au serveur du jeu et requetes envoyees.</p></div>
+    <div class="bento">
       <section class="card span-c2" id="srvcard">
         <h2 class="card-h"><svg class="i"><use href="#i-wifi"/></svg>Serveur du jeu<span class="aside" id="srv-host">-</span></h2>
         <div class="card-b">
@@ -601,6 +652,8 @@ details[open].card > summary .chev { transform: rotate(180deg); }
     <div class="cfg" id="cfg"></div>
     <div class="cfg-actions"><button class="btn primary" id="save" type="button">Enregistrer</button><span class="muted">Pris en compte tout de suite, sans redemarrage.</span></div>
   </details>
+</section>
+
 </main>
 
 <script>
@@ -757,7 +810,7 @@ function renderNet(n, cap) {
   s += `<line x1="0" x2="${W}" y1="${yc}" y2="${yc}" stroke="${tok('--warn')}" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`;
   $('n-hist').innerHTML = s;
 }
-$('netchip').onclick = () => $('netcard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+$('netchip').onclick = () => { showView('systeme'); requestAnimationFrame(() => $('netcard').scrollIntoView({ behavior: 'smooth', block: 'center' })); };
 
 /* ---------- serveur du jeu : DNS, reverse, cert TLS (passif, /api/netinfo) ---------- */
 async function pollNet() {
@@ -792,6 +845,9 @@ function drawAi(S) {
   const zone = L.filter((x) => x.point === 'zone');
   const agreed = zone.filter((x) => x.agree).length;
   $('ai-n').textContent = L.length;
+  // pastille de l'onglet IA : interventions du medecin dans la derniere heure
+  const recentDoc = L.filter((x) => x.point === 'medecin' && Date.now() - x.t < 3600000).length;
+  $('tab-ia-badge').hidden = !recentDoc; $('tab-ia-badge').textContent = recentDoc;
   $('ai-agree').textContent = zone.length ? `${Math.round(agreed / zone.length * 100)} %` : '-';
   $('ai-unblock').textContent = L.filter((x) => x.point === 'deblocage' || x.point === 'medecin').length;
   $('ai-ms').textContent = L.length ? `${(L.reduce((a, x) => a + (x.ms ?? 0), 0) / L.length / 1000).toFixed(1)} s` : '-';
@@ -815,6 +871,52 @@ async function pollAi() {
   el.title = st.vramBytes ? `${(st.vramBytes / 1e9).toFixed(1)} Go en memoire graphique` : 'Aucune memoire graphique utilisee : le GPU reste libre pour les jeux';
 }
 pollAi(); setInterval(pollAi, 20000);
+
+/* ---------- pages : onglets, adresse #page, dernier onglet retenu, fleches du clavier ---------- */
+const VIEWS = ['vue', 'ia', 'jeu', 'systeme'];
+function showView(v, focus = false) {
+  if (!VIEWS.includes(v)) v = 'vue';
+  for (const id of VIEWS) {
+    const on = id === v;
+    $('view-' + id).hidden = !on;
+    const t = $('tab-' + id);
+    t.setAttribute('aria-selected', on);
+    t.tabIndex = on ? 0 : -1;
+    if (on && focus) t.focus();
+  }
+  if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
+  try { localStorage.setItem('dofus-bot-view', v); } catch {}
+  if (v === 'ia') loadAutonomy();
+}
+document.querySelector('.views').addEventListener('click', (e) => { const t = e.target.closest('[data-view]'); if (t) showView(t.dataset.view); });
+document.querySelector('.views').addEventListener('keydown', (e) => {
+  const i = VIEWS.indexOf(document.activeElement?.dataset?.view);
+  if (i < 0) return;
+  const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: VIEWS.length - 1 }[e.key];
+  if (next === undefined) return;
+  e.preventDefault();
+  showView(VIEWS[(next + VIEWS.length) % VIEWS.length], true);
+});
+window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+{
+  let start = location.hash.slice(1);
+  if (!VIEWS.includes(start)) { try { start = localStorage.getItem('dofus-bot-view') ?? 'vue'; } catch { start = 'vue'; } }
+  showView(start);
+}
+
+/* ---------- autonomie : verdict du rapport tools/autonomy-report.mjs ---------- */
+let autoAt = 0;
+async function loadAutonomy(force = false) {
+  if (!force && Date.now() - autoAt < 120000) return;
+  autoAt = Date.now();
+  const r = await fetch('/api/autonomy').then((x) => x.json()).catch(() => null);
+  if (!r) { $('auto-list').innerHTML = '<li class="muted">rapport indisponible</li>'; return; }
+  $('auto-verdict').textContent = r.autonomous ? 'autonome' : 'pas encore';
+  $('auto-verdict').className = 'tag ' + (r.autonomous ? 'ok' : 'no');
+  $('auto-list').innerHTML = r.criteria.map((c) => `<li><svg class="i ${c.ok ? 'c-ok' : 'c-warn'}" aria-hidden="true"><use href="#${c.ok ? 'i-shield' : 'i-alert'}"/></svg><span><span class="k">${esc(c.name)}</span> <span class="sr-only">${c.ok ? 'atteint' : 'non atteint'}</span><br><span class="d">${esc(c.detail)}</span></span></li>`).join('')
+    + `<li><svg class="i" aria-hidden="true"><use href="#i-zap"/></svg><span><span class="k">${esc(r.summary)}</span><br><span class="d">pauses demandees par toi : ${r.humanPauses}</span></span></li>`;
+}
+$('auto-refresh').addEventListener('click', () => loadAutonomy(true));
 
 const CHAT_KEY = 'dofus-bot-chat';
 let chat = [];

@@ -5,6 +5,7 @@ import { choose, explain, converse, diagnose, ORDERS, configure as configureAI, 
 import { DOCTOR_RULES } from './knowledge/rules.mjs';
 import { pickHeal } from './heal.mjs';
 import { remember } from './ai/retrieve.mjs';
+import { autonomyReport } from './tools/autonomy-report.mjs';
 import { exec } from 'node:child_process';
 import http from 'node:http';
 import dns from 'node:dns/promises';
@@ -1452,6 +1453,7 @@ function startDashboard(page) {
       }
       if (req.method === 'POST' && req.url === '/api/pause') { S.paused = !S.paused; log(S.paused ? 'PAUSE (tableau de bord)' : 'REPRISE (tableau de bord)'); return send(200, 'application/json', JSON.stringify({ paused: S.paused })); }
       if (req.url === '/api/llm/status') return send(200, 'application/json', JSON.stringify(await llmStatus()));
+      if (req.url === '/api/autonomy') return send(200, 'application/json', JSON.stringify(autonomyReport({ hours: 24 })));
       if (req.method === 'POST' && req.url === '/api/llm/ask') { // conversation du tableau de bord avec l'IA locale (texte seul, rien n'est execute)
         let body = '';
         for await (const c of req) { body += c; if (body.length > 20000) return send(413, 'text/plain', 'trop long'); }
