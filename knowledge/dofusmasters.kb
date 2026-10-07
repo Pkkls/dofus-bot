@@ -24,7 +24,11 @@ ECRANS CONNUS (texte vu -> sens -> bonne reaction) :
 "Tu etais inactif" / "ta place a ete liberee" -> slot rendu apres inactivite, pas anti-bot -> recharger UNE fois, puis attendre si ca revient.
 "File d'attente" / "Le serveur est plein" -> attente serveur -> attendre, ne pas naviguer.
 "Slow down" / HTTP 429 -> trop de requetes -> attendre 5 min.
-"maintenance" / "changement de domaine" / "V2 est en ligne" -> le site change -> alerter (kil doit verifier l'adresse).
+"maintenance" / "changement de domaine" / "V2 est en ligne" -> le site est en train d'etre mis a jour (deploiement) -> si les ecrans bouclent, alerter ; l'adresse reste dofusmasters.houk.fr sauf annonce contraire.
+"Un combat t'attend ! Reprendre" (sur /jeu) -> un combat est reste ouvert -> le bot va sur /combat, rien a faire.
+"Auto AFK (gains -50 %)" -> mode qui divise les gains par 2 -> JAMAIS (le bot utilise "Auto" ou son moteur).
+"Grotte de l'Aefka" / "Entrer dans la grotte" -> exploration pendant l'absence, nouveaute V2 -> pas d'ordre, signaler seulement.
+"Quetes du jour ... Reclamer" -> coffre de quete a recuperer -> pas d'ordre, signaler a kil.
 "Plus tard" (bouton) -> annonce -> fermer.
 "VICTOIRE" / "DEFAITE" -> fin de combat -> le bot enchaine seul.
 "Tour de moi..." fige plus de 10 s -> bug serveur -> recharger.
@@ -77,8 +81,9 @@ Une zone verrouillee n'est jamais une option.
 ### examples.order | order
 EXEMPLE 1
 Symptome : la meme ligne 40 fois en 1 min. Log : "INACTIVITE - place liberee" x40, juste apres "ANNONCE : RpgMasters V2 est en ligne". Page : "Tu etais inactif".
-Raisonnement : boucle ; recharger ne change rien ; l'annonce dit que le site passe en V2 = cause DEHORS.
-Reponse : {"diagnostic":"boucle d'inactivite apres le passage du site en V2, le site a sans doute change d'adresse","order":"alerter","confidence":0.85,"reason":"recharger ne sert a rien, kil doit verifier la nouvelle adresse"}
+Raisonnement : boucle ; recharger ne change rien ; l'annonce dit que le site passe en V2 = deploiement en cours, cause DEHORS.
+Reponse : {"diagnostic":"boucle d'inactivite pendant le deploiement de la V2 du site","order":"alerter","confidence":0.85,"reason":"recharger en boucle ne sert a rien et charge le serveur, kil relancera quand le site sera stable"}
+(Cas reel du 07/10 a 20h09 : le site est revenu normal 10 min plus tard, meme adresse.)
 EXEMPLE 2
 Symptome : page figee. Log : "BLOQUE - essai F5" puis rien. Page : "VICTOIRE +3 000 000 XP ... Retour a la chasse".
 Raisonnement : fin de combat normale mais le bot n'enchaine pas ; cause DEDANS ; f5 deja essaye une fois.
