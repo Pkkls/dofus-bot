@@ -19,7 +19,7 @@ const decide = (m) => {
   else { S.decisions.unshift({ t: Date.now(), m, n: 1 }); S.decisions.length = Math.min(S.decisions.length, 60); }
   push();
 };
-const CFG_SPEC = { rushPrestige: [0, 0, 10], vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
+const CFG_SPEC = { xpHardStep: [10, 1, 100], rushPrestige: [0, 0, 10], vitShare: [0.2, 0, 1], kamasReserve: [20000, 0, 1e9], huntWins: [40, 1, 500], defeatThreshold: [3, 1, 10], maxGroup: [2, 0, 3], passEvery: [30, 5, 500], arenaEvery: [10, 0, 240], arenaMinEnergy: [60, 0, 1000], maxReqPerMin: [60, 10, 600], blockImages: [1, 0, 1], ringSpare: [4, 0, 20], spareWindow: [15, 0, 100],
   scheduleOn: [0, 0, 1], activeFrom: [540, 0, 1439], activeTo: [60, 0, 1439], maxFightsPerHour: [0, 0, 600], energyReserve: [2, 0, 1000], energyResume: [6, 1, 1000], energyBuy: [0, 0, 1], manualFight: [1, 0, 1], trainFights: [5, 1, 50], trainLevel: [200, 1, 300], climbWins: [5, 0, 200], targetWin: [0.85, 0.5, 1], thinkMin: [800, 0, 20000], thinkMax: [2500, 0, 30000], gapMin: [5, 0, 600], gapMax: [20, 0, 900], breakChance: [0.04, 0, 1], breakMinSec: [90, 0, 570], breakMaxSec: [480, 0, 570], loseRate: [0.05, 0, 0.5], breakJunk: [1, 0, 1], abyssDaily: [1, 0, 1], hardEvery: [10, 0, 200], wisShare: [0.3, 0, 1], stuckSec: [15, 5, 120], energyKamas: [5000, 0, 1e9] }; // energyKamas : reserve de kamas jamais depensee en energie (coffres/HDV : kamasReserve) // energie : reserve gardee pour le boss, reprise apres recharge // horaires en minutes depuis minuit ; 0 combat/h = illimite // [defaut, min, max] ; arenaEvery en min, 0 = arene coupee
 const CFG = { ...Object.fromEntries(Object.entries(CFG_SPEC).map(([k, [d]]) => [k, d])), ...(existsSync('config.json') ? JSON.parse(readFileSync('config.json', 'utf8')) : {}) };
 // Energie : 1 point / 6 min. Lue sur les pages de zone et d'arene, decomptee a chaque combat (chasse/aventure 1, boss/arene 2), estimee entre deux.
@@ -861,7 +861,8 @@ async function climbZone(page, cur, dir, why) {
   }
   if (xpHard && dir < 0) { // XP hard en descente : la zone juste en dessous (niveau min des monstres)
     const curMin = z.find(([h]) => h === cur)?.[3] ?? Infinity;
-    const next = [...z].sort((a, b) => b[3] - a[3]).find(([, , , mn]) => mn < curMin);
+    const next = [...z].sort((a, b) => b[3] - a[3]).find(([, , , mn]) => mn <= curMin - CFG.xpHardStep) // tranche de xpHardStep niveaux (reglable)
+      ?? [...z].sort((a, b) => b[3] - a[3]).find(([, , , mn]) => mn < curMin);
     if (!next) { xpHard = false; S.xpHard = false; xpHardDown = false; decide('XP hard : plus de zone en dessous, retour a la montee normale'); log('XP HARD termine - plus de zone en dessous'); return cur; }
     queueDeck();
     decide(`XP hard descente : ${next[2]} (monstres niv ${next[3]}-${next[1]}, moi ${S.level})`);
