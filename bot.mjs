@@ -1694,7 +1694,23 @@ async function unblock(page, text) {
   const clickables = [...new Set(labels)].filter((t) => UNBLOCK_OK.test(t) && !UNBLOCK_NO.test(t));
   const score = (a) => { const u = known[a]; return u ? (u.ok + 1) / (u.ok + u.ko + 2) : 0.5; };
   const acts = ['F5', ...clickables, 'combat', 'attaque'] // F5 d'abord (serveur souvent surcharge), le tri par score appris garde la main.filter((a) => !unblockTried.has(a)).sort((a, b) => score(b) - score(a));
-  const act = acts[0] ?? (unblockTried.clear(), 'F5');
+  let act = acts[0] ?? (unblockTried.clear(), 'F5');
+  // ecran inconnu (aucune action n'y a jamais marche) : le LLM local lit la page et choisit parmi les memes actions
+  // sures (deja filtrees par UNBLOCK_OK/UNBLOCK_NO). Le resultat s'apprend comme le reste : si ca marche, la prochaine
+  // fois l'action connue passe en premier et le LLM n'est plus consulte.
+  if (acts.length > 1 && !Object.values(known).some((u) => u.ok > u.ko)) {
+    const say = (a) => (a === 'F5' ? 'recharger la page' : a === 'combat' ? 'aller a la page de combat' : a === 'attaque' ? 'relancer une attaque de chasse' : `cliquer sur "${a}"`);
+    const opts = acts.slice(0, 8).map((a, i) => ({ id: String.fromCharCode(65 + i), label: say(a), act: a }));
+    const shown = (await page.locator('main').innerText().catch(() => text)).slice(0, 1500);
+    const t0 = Date.now();
+    const a = await choose(`Le bot est bloque depuis ${CFG.stuckSec} s : rien ne bouge sur la page "${sig}". Texte visible :\n${shown}\n\nQuelle action fait avancer le jeu ?`, opts);
+    if (a) {
+      act = opts.find((o) => o.id === a.option).act;
+      (S.llmLog ??= []).unshift({ t: Date.now(), point: 'deblocage', sig, llm: act, conf: a.confidence, reason: a.reason, ms: Date.now() - t0 });
+      S.llmLog.length = Math.min(S.llmLog.length, 100);
+      decide(`IA deblocage : ecran inconnu "${sig}", le modele choisit "${say(act)}" (confiance ${Math.round(a.confidence * 100)} %) : ${a.reason}`);
+    }
+  }
   log(`BLOQUE - essai "${act}" sur "${sig}"`);
   decide(`Page figee 30 s sur "${sig}" : j'essaie "${act}"${known[act] ? ` (deja marche ${known[act].ok}/${known[act].ok + known[act].ko})` : ''}`);
   unblockPending = { sig, act, at: Date.now() };
