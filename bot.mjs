@@ -1206,8 +1206,8 @@ function startDashboard(page) {
     netCache.p = (async () => {
       const root = HOST.split('.').slice(-2).join('.');
       const o = { host: HOST, dpl: S.dpl ?? null, at: Date.now() };
-      o.a = await dns.resolve4(HOST).catch(() => []);
-      o.aaaa = await dns.resolve6(HOST).catch(() => []);
+      o.a = (await dns.lookup(HOST, { family: 4, all: true }).catch(() => [])).map((x) => x.address); // resolveur de l'OS (c-ares echoue ici)
+      o.aaaa = (await dns.lookup(HOST, { family: 6, all: true }).catch(() => [])).map((x) => x.address);
       o.ptr = o.a[0] ? await dns.reverse(o.a[0]).catch(() => []) : [];
       o.ns = await dns.resolveNs(root).catch(() => []);
       o.tls = await tlsInfo(HOST);
