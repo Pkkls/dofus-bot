@@ -56,6 +56,42 @@ export async function choose(question, options) {
   return { option: a.option, confidence: Math.max(0, Math.min(1, +a.confidence || 0)), reason: String(a.reason ?? '').slice(0, 300) };
 }
 
+/** Ollama reachable? Model loaded, and where (RAM vs VRAM). Never throws. */
+export async function status() {
+  try {
+    const ps = await fetch(URL.replace('/api/chat', '/api/ps'), { signal: AbortSignal.timeout(3000) }).then((r) => r.json());
+    const m = (ps.models ?? []).find((x) => x.name === MODEL);
+    return { up: true, model: MODEL, loaded: !!m, ramBytes: m ? m.size - (m.size_vram ?? 0) : 0, vramBytes: m?.size_vram ?? 0, cpuOnly: OPTIONS.num_gpu === 0 };
+  } catch {
+    return { up: false, model: MODEL, loaded: false, ramBytes: 0, vramBytes: 0, cpuOnly: OPTIONS.num_gpu === 0 };
+  }
+}
+
+/**
+ * Free conversation for the dashboard: kil asks, the model answers with the coaching and the bot's live state.
+ * Read-only: the answer is text, nothing is executed.
+ * @param {{ role: 'user' | 'assistant', content: string }[]} messages
+ * @param {string} state  short description of what the bot is doing now
+ */
+export async function converse(messages, state) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const system = `${coach()}\n\nTu reponds a kil dans son tableau de bord. Tu ne peux rien executer : tu expliques et tu conseilles, court et concret.\n\nEtat actuel du bot :\n${state}`;
+    const r = await fetch(URL, {
+      method: 'POST',
+      signal: ctrl.signal,
+      body: JSON.stringify({ model: MODEL, stream: false, keep_alive: KEEP_ALIVE, options: { ...OPTIONS, num_predict: 400, temperature: 0.3 }, messages: [{ role: 'system', content: system }, ...messages] }),
+    });
+    if (!r.ok) return null;
+    return String((await r.json()).message?.content ?? '').trim() || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Ask the model what a new page element is for and whether the bot should care.
  * @returns {Promise<{ purpose: string, useful: boolean, readOnly: boolean, suggestion: string } | null>}

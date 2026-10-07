@@ -231,6 +231,36 @@ details[open].card > summary .chev { transform: rotate(180deg); }
 .cfg-actions { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-4) var(--space-4); }
 
 /* ===== Responsive ===== */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* ===== IA locale (journal + conversation) ===== */
+.ai-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--border-subtle); }
+.ai-stats > div { padding: var(--space-3) var(--space-4); min-width: 0; }
+.ai-stats > div + div { border-left: 1px solid var(--border-subtle); }
+.ai-stats .l { color: var(--text-3); font-size: var(--fs-xs); }
+.ai-stats .v { font-size: var(--fs-lg); font-weight: 600; color: var(--text-1); margin-top: 2px; }
+.ai-item { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: var(--space-3); padding: var(--space-2) var(--space-4); font-size: var(--fs-sm); }
+.ai-item + .ai-item { border-top: 1px solid var(--border-subtle); }
+.ai-item .t { color: var(--text-3); font-size: var(--fs-xs); padding-top: 2px; }
+.ai-item .h { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.ai-item .why { color: var(--text-2); margin-top: 3px; overflow-wrap: anywhere; }
+.tag.ok { color: var(--accent); background: var(--accent-soft); }
+.tag.no { color: var(--warn); background: var(--warn-soft); }
+.tag.act { color: var(--info); background: var(--info-soft); }
+.chat { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.chat-log { flex: 1; overflow: auto; min-height: 160px; max-height: var(--feed-tall); padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.msg { max-width: 92%; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); font-size: var(--fs-sm); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.me { align-self: flex-end; background: var(--accent-soft); color: var(--text-1); border: 1px solid var(--accent-line); }
+.msg.ai { align-self: flex-start; background: var(--surface-2); color: var(--text-1); border: 1px solid var(--border-subtle); }
+.msg.err { align-self: flex-start; background: var(--danger-soft); color: var(--text-1); border: 1px solid var(--danger-line); }
+.msg .meta { display: block; margin-top: var(--space-1); color: var(--text-3); font-size: var(--fs-xs); }
+.chat-sugg { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0 var(--space-4) var(--space-3); }
+.chat-sugg .btn { height: 28px; font-size: var(--fs-xs); }
+.chat-form { display: flex; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border-subtle); }
+.chat-form textarea { flex: 1; min-width: 0; resize: none; height: 54px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface-page); color: var(--text-1); font: inherit; font-size: var(--fs-sm); }
+.chat-form textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+.chat-form .btn { align-self: stretch; height: auto; }
+.thinking::after { content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s infinite; vertical-align: middle; }
+@media (max-width: 720px) { .ai-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ai-stats > div:nth-child(3) { border-left: 0; } }
 @media (max-width: 1280px) {
   .row { grid-template-columns: minmax(0, 1fr); }
   .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -285,6 +315,8 @@ details[open].card > summary .chev { transform: rotate(180deg); }
   <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></symbol>
   <symbol id="i-brain" viewBox="0 0 24 24"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></symbol>
   <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></symbol>
 </svg>
 
 <header class="top">
@@ -350,6 +382,35 @@ details[open].card > summary .chev { transform: rotate(180deg); }
     <section class="card feedcard tall">
       <h2 class="card-h"><svg class="i"><use href="#i-brain"/></svg>Decisions<span class="aside"><span class="live"><span class="dot"></span>en direct</span></span></h2>
       <div class="list" id="decisions"></div>
+    </section>
+  </div>
+
+  <div class="row">
+    <section class="card feedcard tall" aria-labelledby="ai-title">
+      <h2 class="card-h" id="ai-title"><svg class="i"><use href="#i-bot"/></svg>IA locale<span class="aside"><span class="pill offline" id="ai-status"><span class="dot"></span>verification</span></span></h2>
+      <div class="ai-stats">
+        <div><div class="l">Avis rendus</div><div class="v num" id="ai-n">-</div></div>
+        <div><div class="l">Accord avec le moteur</div><div class="v num" id="ai-agree">-</div></div>
+        <div><div class="l">Deblocages decides</div><div class="v num" id="ai-unblock">-</div></div>
+        <div><div class="l">Temps moyen</div><div class="v num" id="ai-ms">-</div></div>
+      </div>
+      <div class="list" id="ai-log"></div>
+    </section>
+    <section class="card" aria-labelledby="chat-title">
+      <h2 class="card-h" id="chat-title"><svg class="i"><use href="#i-brain"/></svg>Demander a l&#39;IA<span class="aside"><button class="btn ghost" id="chat-clear" type="button">Effacer</button></span></h2>
+      <div class="chat">
+        <div class="chat-log" id="chat-log" role="log" aria-live="polite" aria-label="Conversation avec l&#39;IA locale"></div>
+        <div class="chat-sugg" id="chat-sugg">
+          <button class="btn" type="button">Que fait le bot en ce moment ?</button>
+          <button class="btn" type="button">Pourquoi cette zone ?</button>
+          <button class="btn" type="button">Comment gagner plus d&#39;XP ?</button>
+        </div>
+        <form class="chat-form" id="chat-form">
+          <label for="chat-in" class="sr-only">Question pour l&#39;IA</label>
+          <textarea id="chat-in" placeholder="Pose ta question (Entree pour envoyer, Maj+Entree pour une nouvelle ligne)" maxlength="2000"></textarea>
+          <button class="btn primary" id="chat-send" type="submit"><svg class="i"><use href="#i-send"/></svg><span>Envoyer</span></button>
+        </form>
+      </div>
     </section>
   </div>
 
@@ -721,11 +782,77 @@ async function pollNet() {
 }
 pollNet(); setInterval(pollNet, 30000);
 
+/* ---------- IA locale : journal (S.llmLog), etat Ollama, conversation ---------- */
+const renderAi = { key: '' };
+function drawAi(S) {
+  const L = S.llmLog ?? [];
+  const k = L.length + ':' + (L[0]?.t ?? 0);
+  if (k === renderAi.key) return;
+  renderAi.key = k;
+  const zone = L.filter((x) => x.point === 'zone');
+  const agreed = zone.filter((x) => x.agree).length;
+  $('ai-n').textContent = L.length;
+  $('ai-agree').textContent = zone.length ? `${Math.round(agreed / zone.length * 100)} %` : '-';
+  $('ai-unblock').textContent = L.filter((x) => x.point === 'deblocage').length;
+  $('ai-ms').textContent = L.length ? `${(L.reduce((a, x) => a + (x.ms ?? 0), 0) / L.length / 1000).toFixed(1)} s` : '-';
+  $('ai-log').innerHTML = L.length ? L.map((x) => {
+    const head = x.point === 'deblocage'
+      ? `<span class="tag act">deblocage</span><span>${esc(x.sig ?? '')} : <b>${esc(x.llm ?? '')}</b></span>`
+      : `<span class="tag ${x.agree ? 'ok' : 'no'}">${x.agree ? "d'accord" : "pas d'accord"}</span><span>moteur : ${esc(x.engine ?? '')} · IA : <b>${esc(x.llm ?? '')}</b></span>`;
+    return `<div class="ai-item"><span class="t num">${hms(x.t)}</span><div><div class="h">${head}<span class="muted num">${Math.round((x.conf ?? 0) * 100)} % · ${((x.ms ?? 0) / 1000).toFixed(0)} s</span></div><div class="why">${esc(x.reason ?? '')}</div></div></div>`;
+  }).join('') : "<div class=\"empty\">Aucun avis pour l'instant. L'IA est consultee a chaque check XP (mode ombre : elle donne son avis, le moteur decide) et quand le bot reste fige sur un ecran qu'il ne connait pas (la, elle decide).</div>";
+}
+async function pollAi() {
+  const st = await fetch('/api/llm/status').then((r) => r.json()).catch(() => null);
+  const el = $('ai-status');
+  if (!st || !st.up) { el.className = 'pill offline'; el.innerHTML = '<span class="dot"></span>Ollama arrete'; el.title = ''; return; }
+  const mem = st.loaded ? ` · ${(st.ramBytes / 1e9).toFixed(1)} Go RAM` : ' · en veille';
+  el.className = 'pill combat';
+  el.innerHTML = `<span class="dot"></span>${st.cpuOnly ? 'CPU' : 'GPU'} · ${esc(st.model.replace('-instruct', ''))}${mem}`;
+  el.title = st.vramBytes ? `${(st.vramBytes / 1e9).toFixed(1)} Go en memoire graphique` : 'Aucune memoire graphique utilisee : le GPU reste libre pour les jeux';
+}
+pollAi(); setInterval(pollAi, 20000);
+
+const CHAT_KEY = 'dofus-bot-chat';
+let chat = [];
+try { chat = JSON.parse(sessionStorage.getItem(CHAT_KEY) ?? '[]'); } catch { chat = []; }
+const saveChat = () => { try { sessionStorage.setItem(CHAT_KEY, JSON.stringify(chat.slice(-30))); } catch {} };
+function drawChat(pending) {
+  const log = $('chat-log');
+  log.innerHTML = (chat.length ? '' : "<div class=\"empty\">Pose une question a ton IA locale (Ollama, sur le CPU). Elle connait l'etat du bot et tes regles, mais n'execute rien.</div>")
+    + chat.map((m) => `<div class="msg ${m.role === 'user' ? 'me' : m.err ? 'err' : 'ai'}">${esc(m.content)}${m.ms ? `<span class="meta num">${(m.ms / 1000).toFixed(0)} s</span>` : ''}</div>`).join('')
+    + (pending ? '<div class="msg ai thinking">reflechit (environ 10 s sur le CPU)</div>' : '');
+  log.scrollTop = log.scrollHeight;
+  $('chat-sugg').hidden = chat.length > 0;
+}
+async function askAi(q) {
+  q = q.trim();
+  if (!q || $('chat-send').disabled) return;
+  chat.push({ role: 'user', content: q }); saveChat();
+  $('chat-in').value = ''; $('chat-send').disabled = true; drawChat(true);
+  const msgs = chat.filter((m) => !m.err).map(({ role, content }) => ({ role, content }));
+  try {
+    const r = await fetch('/api/llm/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: msgs }) });
+    if (!r.ok) throw new Error(await r.text());
+    const { answer, ms } = await r.json();
+    chat.push({ role: 'assistant', content: answer, ms });
+  } catch (e) {
+    chat.push({ role: 'assistant', content: `Pas de reponse : ${e.message || 'IA locale injoignable'}. Verifie qu'Ollama tourne.`, err: true });
+  }
+  saveChat(); $('chat-send').disabled = false; drawChat(false); $('chat-in').focus();
+}
+$('chat-form').addEventListener('submit', (e) => { e.preventDefault(); askAi($('chat-in').value); });
+$('chat-in').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); askAi($('chat-in').value); } });
+$('chat-sugg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) askAi(b.textContent); });
+$('chat-clear').addEventListener('click', () => { chat = []; saveChat(); drawChat(false); });
+drawChat(false);
+
 /* ---------- rendu principal ---------- */
 const renderDecisions = { key: '' }, renderTurns = { key: '' };
 function render(d) {
   const { S, stats: st, CFG, now } = d;
   renderNet(d.net, CFG.maxReqPerMin);
+  drawAi(S);
   setStatus(S.paused ? 'pause' : S.status);
   $('manual').innerHTML = `${icon('swords')}<span>Combat : ${CFG.manualFight ? 'manuel' : 'auto'}</span>`; $('manual').setAttribute('aria-pressed', String(!!CFG.manualFight));
   $('pause').innerHTML = S.paused ? `${icon('play')}<span>Reprendre</span>` : `${icon('pause')}<span>Pause</span>`;

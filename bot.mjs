@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 import { appendFileSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { adviseZone, pickBestMeasured, isCurrent } from './zone-advisor.mjs';
-import { choose, explain } from './llm.mjs';
+import { choose, explain, converse, status as llmStatus } from './llm.mjs';
 import { exec } from 'node:child_process';
 import http from 'node:http';
 import dns from 'node:dns/promises';
@@ -1286,6 +1286,23 @@ function startDashboard(page) {
         return send(200, 'application/json', JSON.stringify({ queue: S.queue }));
       }
       if (req.method === 'POST' && req.url === '/api/pause') { S.paused = !S.paused; log(S.paused ? 'PAUSE (tableau de bord)' : 'REPRISE (tableau de bord)'); return send(200, 'application/json', JSON.stringify({ paused: S.paused })); }
+      if (req.url === '/api/llm/status') return send(200, 'application/json', JSON.stringify(await llmStatus()));
+      if (req.method === 'POST' && req.url === '/api/llm/ask') { // conversation du tableau de bord avec l'IA locale (texte seul, rien n'est execute)
+        let body = '';
+        for await (const c of req) { body += c; if (body.length > 20000) return send(413, 'text/plain', 'trop long'); }
+        const msgs = (JSON.parse(body).messages ?? []).filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(-12).map((m) => ({ role: m.role, content: m.content.slice(0, 2000) }));
+        if (!msgs.length || msgs.at(-1).role !== 'user') return send(400, 'text/plain', 'question manquante');
+        const live = (f, d) => { try { return f(); } catch { return d; } }; // le serveur demarre avant la boucle : variables pas encore declarees
+        const z = live(() => zone, S.zone), hard = live(() => xpHard, false), spots = live(() => spotQueue.length, 0);
+        const Z = S.learn?.zones?.[z];
+        const state = [`Niveau ${S.level}, statut ${S.status}${S.paused ? ' (en pause)' : ''}.`,
+          `Zone ${z ?? 'aucune'}${Z ? ` : ${Math.round(Z.xpm)} XP/min, ${Math.round(Z.win * 100)} % victoires` : ''}.`,
+          `XP hard ${hard ? 'en cours' : 'non'}, mesure de zones ${spots ? `en cours (${spots} restantes)` : 'non'}.`,
+          `Dernieres decisions :\n${(S.decisions ?? []).slice(0, 6).map((x) => '- ' + x.m.slice(0, 200)).join('\n')}`].join('\n');
+        const t0 = Date.now();
+        const answer = await converse(msgs, state);
+        return answer ? send(200, 'application/json', JSON.stringify({ answer, ms: Date.now() - t0 })) : send(503, 'text/plain', 'IA locale indisponible (Ollama arrete ?)');
+      }
       if (req.method === 'POST' && req.url === '/api/config') {
         let body = '';
         for await (const c of req) body += c;
@@ -2210,7 +2227,10 @@ while (true) {
         && (++zoneCheck >= CFG.zoneCheckEvery || S.level >= (S.zoneReview?.lvl ?? 0) + 3)) {
       zoneCheck = 0;
       await safe('zone', zoneReview(page));
-      if (spotQueue.length) continue; // la mesure demarre au tour suivant
+      if (spotQueue.length) { // la mesure demarre tout de suite : on est dans le bloc de fin de combat (endHandled), un `continue` seul ne relancerait rien
+        zone = spotQueue[0]; spotFights = 1;
+        if ((await safe('attaque', attackGroup(page, zone, grpRank()))) === true) continue;
+      }
     }
     if (CFG.hardEvery && CFG.manualFight && !xpHard && !spotQueue.length && zone && !adventure && !S.recharging && S.level - ((S.learn?.hard?.lvl ?? 0) > S.level ? 0 : S.learn?.hard?.lvl ?? 0) >= CFG.hardEvery) {
       xpHard = true; xpHardWins = XP_TOP; xpHardDown = false; xpHardLastWin = null; S.xpHard = true; climbDir = 1; climbHist = []; climbStreak = 0;
