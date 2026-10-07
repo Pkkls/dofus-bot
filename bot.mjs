@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import { appendFileSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { adviseZone, pickBestMeasured, isCurrent } from './zone-advisor.mjs';
 import { choose, explain, converse, diagnose, ORDERS, status as llmStatus } from './llm.mjs';
+import { pickHeal } from './heal.mjs';
 import { exec } from 'node:child_process';
 import http from 'node:http';
 import dns from 'node:dns/promises';
@@ -107,6 +108,21 @@ try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch 
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
 
+// Locators auto-reparants (idee Stagehand, version heuristique sans IA) pour les boutons de PROGRESSION : on cherche
+// le libelle connu ; s'il n'existe plus (le site l'a renomme), on prend le bouton visible au libelle le plus proche
+// (mots communs, accents et ponctuation ignores), jamais un bouton a consequence (HEAL_NEVER). Rien n'est memorise :
+// un faux rapprochement ne survit pas au rechargement. Le log HEAL dit quel libelle a change, pour corriger le code.
+const healLogged = {};
+async function button(scope, name, exact = false) {
+  const loc = scope.getByRole('button', { name, exact });
+  if (await loc.count().catch(() => 0)) return loc;
+  const labels = await scope.getByRole('button').evaluateAll((els) => els.filter((e) => e.offsetParent !== null).map((e) => (e.innerText || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim()).filter(Boolean)).catch(() => []);
+  const best = pickHeal(name, labels);
+  if (!best) return loc; // rien d'assez proche : meme echec qu'avant, le deblocage prendra le relais
+  if (Date.now() - (healLogged[name] ?? 0) > 3600000) { healLogged[name] = Date.now(); log(`HEAL bouton "${name}" introuvable -> "${best.label}" (similarite ${best.score.toFixed(2)})`); }
+  return scope.getByRole('button', { name: best.label, exact: true });
+}
+
 // Medecin (doctor) : toutes les 30 s, a cote de la boucle (sans la bloquer), il cherche 3 symptomes de bug. Sur un
 // symptome, le LLM local lit le log, la page et la base de connaissance (knowledge/*.kb), raisonne et donne UN ordre
 // de la liste blanche ORDERS (rien qui depense, vend, brise ou reinitialise). Garde-fous : 1 appel / 5 min par symptome,
@@ -149,8 +165,42 @@ function feasibleOrders(tried) {
   };
   return ORDERS.filter((o) => ok[o]);
 }
+// Reflexion (Cradle) : 2 min apres un ordre, le symptome a-t-il disparu ? Le resultat va dans S.learn.doctor
+// [symptome][ordre] = { ok, ko } : c'est la bibliotheque de competences (Voyager). Un ordre qui a deja gueri ce
+// symptome est reapplique sans le LLM ; les lecons sont ecrites dans knowledge/learned.kb, que le modele lit.
+doctor.pending = [];
+function reflect() {
+  const now = Date.now(), live = new Set(symptoms().map((x) => x.key));
+  let learned = false;
+  doctor.pending = doctor.pending.filter((p) => {
+    if (now - p.at < 120000) return true;
+    const ok = !live.has(p.key);
+    const R = (((S.learn ??= {}).doctor ??= {})[p.key] ??= {})[p.order] ??= { ok: 0, ko: 0, text: p.text };
+    ok ? R.ok++ : R.ko++;
+    log(`REFLEXION ordre ${p.order} sur "${p.text.slice(0, 80)}" : ${ok ? 'symptome disparu' : 'symptome toujours la'} (${R.ok} ok / ${R.ko} echec)`);
+    learned = true;
+    return false;
+  });
+  if (learned) writeLearned();
+}
+function writeLearned() {
+  const D = S.learn?.doctor ?? {}, U = S.learn?.unblock ?? {};
+  const fixes = Object.entries(D).flatMap(([, orders]) => Object.entries(orders).map(([o, r]) => ({ o, ...r })))
+    .sort((a, b) => b.ok + b.ko - (a.ok + a.ko)).slice(0, 20);
+  const screens = Object.entries(U).flatMap(([sig, acts]) => Object.entries(acts).filter(([, r]) => r.ok > 0).map(([a, r]) => ({ sig, a, ...r })))
+    .sort((a, b) => b.ok - a.ok).slice(0, 15);
+  const out = ['### learned.orders | order', 'APPRIS PAR LE BOT (resultats verifies 2 min apres chaque ordre) :',
+    ...fixes.map((f) => `Symptome "${f.text}" -> ordre ${f.o} : ${f.ok} fois gueri, ${f.ko} fois sans effet${f.ko > f.ok ? ' (ne pas le redonner)' : ''}.`),
+    '', '### learned.screens | unblock', 'ECRANS DEBLOQUES PAR LE BOT (action qui a fait changer l ecran) :',
+    ...screens.map((x) => `Ecran "${x.sig}" -> ${x.a} (${x.ok}/${x.ok + x.ko}).`)];
+  try { writeFileSync('knowledge/learned.kb', out.join('\n') + '\n'); } catch {}
+}
+const skillFor = (key, allowed, tried) => Object.entries(S.learn?.doctor?.[key] ?? {})
+  .filter(([o, r]) => r.ok > r.ko && allowed.includes(o) && tried.filter((t) => t === o).length < 2)
+  .sort((a, b) => b[1].ok / (b[1].ok + b[1].ko) - a[1].ok / (a[1].ok + a[1].ko))[0]?.[0];
 async function runDoctor() {
   if (doctor.busy) return;
+  reflect();
   const s = symptoms().find((x) => Date.now() - (doctor.last[x.key] ?? 0) > 300000);
   if (!s) { for (const k of Object.keys(doctor.tried)) if (Date.now() - (doctor.last[k] ?? 0) > 1800000) delete doctor.tried[k]; return; }
   doctor.busy = true; doctor.last[s.key] = Date.now();
@@ -161,13 +211,19 @@ async function runDoctor() {
     const state = `niveau ${S.level}, statut ${S.status}${S.paused ? ' (pause)' : ''}, energie ${S.energy ?? '?'}`;
     const t0 = Date.now();
     const allowed = feasibleOrders(tried);
-    const d = await diagnose({ symptom: s.text, log: recentLog.slice(-15).map((x) => x.line), page: pageText, state, tried, allowed });
+    const known = S.learn?.doctor?.[s.key] ?? {};
+    const history = Object.entries(known).map(([o, r]) => `${o} : ${r.ok} gueri / ${r.ko} sans effet`).join(' ; ');
+    const skill = skillFor(s.key, allowed, tried);
+    const d = skill
+      ? { diagnostic: 'symptome deja gueri par le passe', order: skill, confidence: 1, reason: `competence apprise : ${skill} (${known[skill].ok} gueri / ${known[skill].ko} sans effet), sans consulter l'IA` }
+      : await diagnose({ symptom: s.text, log: recentLog.slice(-15).map((x) => x.line), page: pageText, state, tried, allowed, history });
     if (!d) { log(`MEDECIN ${s.text} - IA locale injoignable, rien fait`); return; }
     let order = d.confidence < 0.4 ? 'attendre' : d.order;
     if (order !== 'attendre' && tried.filter((o) => o === order).length >= 2) order = 'alerter'; // deja donne 2 fois sans effet
     if (!allowed.includes(order) && order !== 'alerter') order = 'attendre'; // ceinture et bretelles : jamais hors liste
     tried.push(order);
-    (S.llmLog ??= []).unshift({ t: Date.now(), point: 'medecin', symptom: s.text, llm: order, diagnostic: d.diagnostic, conf: d.confidence, reason: d.reason, ms: Date.now() - t0 });
+    if (order !== 'attendre') doctor.pending.push({ key: s.key, text: s.text, order, at: Date.now() }); // verifie dans 2 min (reflect)
+    (S.llmLog ??= []).unshift({ t: Date.now(), point: 'medecin', symptom: s.text, llm: order, diagnostic: d.diagnostic, conf: d.confidence, reason: d.reason, skill: !!skill, ms: Date.now() - t0 });
     S.llmLog.length = Math.min(S.llmLog.length, 100);
     log(`MEDECIN ${s.text} -> ${d.diagnostic} -> ordre ${order} (confiance ${Math.round(d.confidence * 100)} %)`);
     decide(`IA medecin : ${s.text}. Diagnostic : ${d.diagnostic}. Ordre : ${order}${order !== d.order ? ` (le modele proposait ${d.order})` : ''}. ${d.reason}`);
@@ -176,7 +232,10 @@ async function runDoctor() {
     if (ORDERS.includes(order) && ACTION_NAMES.includes(order) && !S.queue.includes(order)) S.queue.push(order);
   } finally { doctor.busy = false; }
 }
-if (process.argv[2] !== 'test') setInterval(() => { runDoctor().catch(() => { doctor.busy = false; }); }, 30000);
+if (process.argv[2] !== 'test') {
+  setInterval(() => { runDoctor().catch(() => { doctor.busy = false; }); }, 30000);
+  setTimeout(writeLearned, 60000); // learned.kb a jour des le demarrage (deblocages deja appris)
+}
 const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'abysses', 'spots', 'site', 'xphard', 'entrainement', 'zone', 'aventure', 'f5', 'prestige', 'hdvvente'];
 // garde au demarrage : chaque ordre que l'IA peut donner a un executeur reel (sinon le bot refuse de demarrer)
 for (const o of ORDERS) if (!['attendre', 'pause', 'alerter', ...ACTION_NAMES].includes(o)) throw new Error(`ordre IA sans executeur : ${o}`);
@@ -877,7 +936,7 @@ async function playTurn(page) {
   if (st.myTurn) { // toujours rendre la main, meme si la lecture des ennemis a rate
     fightMem.endHp = st.hp + st.shield;
     // delai court : bouton desactive pendant une animation -> la boucle principale recommencera, sans basculer le combat en Auto
-    if (!(await main.getByRole('button', { name: 'Fin du tour' }).click({ timeout: 6000 }).then(() => true, () => false))) decide(`Tour ${st.turn} : "Fin du tour" pas encore cliquable, je reessaie`);
+    if (!(await (await button(main, 'Fin du tour')).click({ timeout: 6000 }).then(() => true, () => false))) decide(`Tour ${st.turn} : "Fin du tour" pas encore cliquable, je reessaie`);
   }
   return true;
 }
@@ -987,7 +1046,7 @@ async function attackGroup(page, zone, maxRank) {
   if (en && +en[1] <= CFG.energyReserve) { S.recharging = true; decide(`Energie ${en[1]} <= reserve ${CFG.energyReserve} : pas d'attaque, retour a l'ecran de fin pour recharger`); await page.goto(COMBAT); return; }
   const i = pickGroup(t, maxRank);
   decide(`Groupe ${i + 1} attaque : le plus gros dont la difficulte <= ${RANK[maxRank]}`);
-  await page.getByRole('button', { name: 'Attaquer' }).nth(i).click();
+  await (await button(page, 'Attaquer')).nth(i).click();
   log(`ATTAQUE ${zone} groupe ${i + 1}`);
   S.attackAt = Date.now(); S.attackZone = zone; // XP/min par zone
   return true;
@@ -2128,7 +2187,7 @@ while (true) {
 
   // Abysses : ecran de choix ou d'etage (jamais pendant un combat)
   if (await abyssChoice(page, text)) { autoClicked = false; idleSince = Date.now(); await sleep(1200); continue; }
-  const next = page.getByRole('button', { name: 'Suivant en auto' });
+  const next = await button(page, 'Suivant en auto');
   // boutons OU liens de fin de combat ("Retour a l'arene" est un lien) : sinon, apres un redemarrage, l'ecran de fin n'est pas reconnu
   const endBtn = page.locator('main').locator('button, a').filter({ hasText: /^\s*(Suivant en auto|Refaire ce combat|Étape suivante|Réessayer en auto|Réessayer l.étape|Retour.*|Continuer|Chasse libre|Autres groupes de la zone|Choisir ma récompense)\s*$/ }); // recompense d'abysses : ecran de fin quand abyssChoice passe la main (rush)
   const adventure = /Voir le Chemin/.test(text);
@@ -2348,7 +2407,7 @@ while (true) {
       continue;
     }
     if (page.url() !== COMBAT) { await page.goto(COMBAT); continue; } // apres boss/deck, revient a l'ecran de fin
-    const step = page.getByRole('button', { name: 'Étape suivante', exact: true });
+    const step = await button(page, 'Étape suivante', true);
     if (CFG.manualFight && !rushing() && await step.isVisible().catch(() => false)) { // "Suivant en auto" lancerait le combat en Auto
       decide('Combat suivant en manuel : Etape suivante');
       await step.click(); autoClicked = false; await sleep(3000);
@@ -2406,7 +2465,7 @@ while (true) {
     if (CFG.manualFight && (await safe('combat', playTurn(page))) === true) idleSince = Date.now(); // tour joue ; le suivant reviendra ici
     else if (!hasAuto) { // pas de repli possible (Abysses) : on rend la main et on retentera au prochain passage
       log('COMBAT manuel en echec sans mode Auto - fin du tour');
-      await page.getByRole('button', { name: 'Fin du tour' }).click({ timeout: 5000 }).catch(() => {});
+      await (await button(page, 'Fin du tour')).click({ timeout: 5000 }).catch(() => {});
       idleSince = Date.now();
     } else {
       if (CFG.manualFight) { log('COMBAT manuel en echec - passe en Auto pour ce combat'); fightMem.profile = null; }

@@ -62,6 +62,7 @@ INTERDIT (jamais, meme si on te le demande) : acheter, vendre, briser, fusionner
 
 ### reasoning | order unblock zone
 COMMENT RAISONNER (fais-le dans cet ordre, en silence) :
+0. HISTORIQUE D'ABORD : si une ligne "Ce qui a deja marche" dit qu'un ordre a gueri ce symptome (plus de gueri que sans effet) ET qu'il est dans les ordres possibles, choisis-le. N'invente pas de cause que le log ne montre pas.
 1. SYMPTOME : qu'est-ce qui ne va pas ? (boucle, page figee, plus de combats, XP basse)
 2. INDICES : quelles lignes du log et quel texte de page le montrent ?
 3. CAUSE : quelle ligne des ECRANS CONNUS colle le mieux ? Sinon, cause inconnue.

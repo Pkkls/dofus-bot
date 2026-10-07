@@ -797,7 +797,7 @@ function drawAi(S) {
   $('ai-ms').textContent = L.length ? `${(L.reduce((a, x) => a + (x.ms ?? 0), 0) / L.length / 1000).toFixed(1)} s` : '-';
   $('ai-log').innerHTML = L.length ? L.map((x) => {
     const head = x.point === 'medecin'
-      ? `<span class="tag ${x.llm === 'alerter' || x.llm === 'pause' ? 'no' : 'act'}">medecin</span><span>${esc(x.symptom ?? '')} → ordre <b>${esc(x.llm ?? '')}</b></span>`
+      ? `<span class="tag ${x.skill ? 'ok' : x.llm === 'alerter' || x.llm === 'pause' ? 'no' : 'act'}">${x.skill ? 'competence' : 'medecin'}</span><span>${esc(x.symptom ?? '')} → ordre <b>${esc(x.llm ?? '')}</b></span>`
       : x.point === 'deblocage'
       ? `<span class="tag act">deblocage</span><span>${esc(x.sig ?? '')} : <b>${esc(x.llm ?? '')}</b></span>`
       : `<span class="tag ${x.agree ? 'ok' : 'no'}">${x.agree ? "d'accord" : "pas d'accord"}</span><span>moteur : ${esc(x.engine ?? '')} · IA : <b>${esc(x.llm ?? '')}</b></span>`;

@@ -1,13 +1,17 @@
 // Local LLM advisor (Ollama, CPU only so the GPU stays free for games).
 //
-// The model never drives the browser. It reads a knowledge pack written for small models (knowledge/*.kb), then
-// either picks one option from a list the engine built, diagnoses a bug and gives one order from a whitelist, or
-// answers kil in the dashboard. Every answer is schema-checked; any failure returns null and the bot carries on.
+// The model never drives the browser. It reads a knowledge pack written for small models (knowledge/*.kb, plus
+// knowledge/learned.kb that the bot writes from its own verified fixes), then either picks one option from a list the
+// engine built, diagnoses a bug and gives one order from the orders feasible right now, or answers kil in the
+// dashboard. One zod schema per call both constrains decoding (Ollama `format`) and validates the answer: constrained
+// decoding removes format errors, not meaning errors, so the engine still pre-filters options and checks orders.
+// Any failure (Ollama down, timeout, invalid answer) returns null and the bot carries on.
 import { readFileSync, existsSync, statSync } from 'node:fs';
+import { z } from 'zod';
 
 const URL = 'http://127.0.0.1:11434/api/chat';
 const MODEL = 'qwen2.5:7b-instruct';
-const KB_FILE = 'knowledge/dofusmasters.kb';
+const KB_FILES = ['knowledge/dofusmasters.kb', 'knowledge/learned.kb'];
 // CPU only (num_gpu 0), 4 threads so a game keeps the rest, kept in RAM 30 min to skip the ~12 s reload
 const OPTIONS = { num_gpu: 0, num_thread: 4, num_ctx: 4096, num_predict: 200, temperature: 0 };
 const KEEP_ALIVE = '30m';
@@ -17,25 +21,28 @@ const TIMEOUT_MS = 90000;
 export const ORDERS = ['attendre', 'f5', 'zone', 'spots', 'xphard', 'deck', 'aventure', 'boss', 'site', 'pause', 'alerter'];
 
 // Knowledge pack: "### id | point, point" headers. A call only carries the sections tagged for its decision point,
-// so the prompt stays well inside a 4k context.
-let kbCache = { mtime: 0, sections: [] };
-function knowledge(point) {
-  if (!existsSync(KB_FILE)) return '';
-  const mtime = statSync(KB_FILE).mtimeMs; // re-parsed only when the file changes, so it can be edited live
-  if (mtime !== kbCache.mtime) {
-    kbCache = {
-      mtime,
-      sections: readFileSync(KB_FILE, 'utf8').split(/^### /m).filter(Boolean).map((block) => {
-        const [head, ...body] = block.split('\n');
-        const [, tags = 'all'] = head.split('|');
-        return { tags: tags.split(',').map((t) => t.trim()), text: body.join('\n').trim() };
-      }),
-    };
-  }
-  return kbCache.sections.filter((s) => s.tags.includes('all') || s.tags.includes(point)).map((s) => s.text).join('\n\n');
+// so the prompt stays inside a 4k context. Re-parsed when a file changes, so it can be edited (or learned) live.
+const kbCache = new Map();
+function sections(file) {
+  if (!existsSync(file)) return [];
+  const mtime = statSync(file).mtimeMs;
+  const hit = kbCache.get(file);
+  if (hit?.mtime === mtime) return hit.sections;
+  const parsed = readFileSync(file, 'utf8').split(/^### /m).filter((b) => b.trim()).map((block) => {
+    const [head, ...body] = block.split('\n');
+    const [, tags = 'all'] = head.split('|');
+    return { tags: tags.split(',').map((t) => t.trim()), text: body.join('\n').trim() };
+  });
+  kbCache.set(file, { mtime, sections: parsed });
+  return parsed;
 }
+const knowledge = (point) => KB_FILES.flatMap(sections).filter((s) => s.tags.includes('all') || s.tags.includes(point)).map((s) => s.text).join('\n\n');
 
-async function chat(point, user, schema, extra = {}) {
+const confidence = z.number().transform((x) => Math.max(0, Math.min(1, x)));
+const text = (n) => z.string().transform((s) => s.trim().slice(0, n));
+
+/** One call: zod schema -> JSON schema for Ollama, then the same schema validates the answer. */
+async function ask(point, messages, schema, extra = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
@@ -43,13 +50,14 @@ async function chat(point, user, schema, extra = {}) {
       method: 'POST',
       signal: ctrl.signal,
       body: JSON.stringify({
-        model: MODEL, stream: false, keep_alive: KEEP_ALIVE, format: schema, options: { ...OPTIONS, ...extra },
-        messages: [{ role: 'system', content: knowledge(point) }, ...(Array.isArray(user) ? user : [{ role: 'user', content: user }])],
+        model: MODEL, stream: false, keep_alive: KEEP_ALIVE, format: z.toJSONSchema(schema, { io: 'input' }), options: { ...OPTIONS, ...extra },
+        messages: [{ role: 'system', content: knowledge(point) }, ...(typeof messages === 'string' ? [{ role: 'user', content: messages }] : messages)],
       }),
     });
     if (!r.ok) return null;
-    const out = JSON.parse((await r.json()).message?.content ?? 'null');
-    return out && typeof out === 'object' ? out : null;
+    const raw = JSON.parse((await r.json()).message?.content ?? 'null');
+    const out = schema.safeParse(raw);
+    return out.success ? out.data : null;
   } catch {
     return null;
   } finally {
@@ -66,45 +74,33 @@ async function chat(point, user, schema, extra = {}) {
  */
 export async function choose(question, options, point = 'zone') {
   if (!options.length) return null;
-  const ids = options.map((o) => o.id);
-  const schema = {
-    type: 'object',
-    properties: { option: { type: 'string', enum: ids }, confidence: { type: 'number' }, reason: { type: 'string' } },
-    required: ['option', 'confidence', 'reason'],
-  };
+  const schema = z.object({ option: z.enum(options.map((o) => o.id)), confidence, reason: text(300) });
   const user = `${question}\n\nOptions :\n${options.map((o) => `${o.id}) ${o.label}`).join('\n')}\n\nChoisis une option. Raison en une phrase.`;
-  const a = await chat(point, user, schema);
-  if (!a || !ids.includes(a.option)) return null;
-  return { option: a.option, confidence: clamp01(a.confidence), reason: String(a.reason ?? '').slice(0, 300) };
+  return ask(point, user, schema);
 }
 
 /**
- * The bot is sick: read the symptom, reason with the knowledge pack, give one order from ORDERS.
- * The schema enum is `allowed`: only orders the bot can really carry out right now, so the model cannot answer
- * anything else (an invented or impossible order is not even expressible).
- * @param {{ symptom: string, log: string[], page: string, state: string, tried: string[], allowed: string[] }} s
+ * The bot is sick: read the symptom, reason with the knowledge pack, give one order.
+ * The schema enum is `allowed`: only orders the bot can really carry out right now, so an invented or impossible
+ * order cannot even be expressed. `history` is what already worked or failed on this kind of symptom.
+ * @param {{ symptom: string, log: string[], page: string, state: string, tried: string[], allowed: string[], history: string }} s
  * @returns {Promise<{ diagnostic: string, order: string, confidence: number, reason: string } | null>}
  */
-export async function diagnose({ symptom, log, page, state, tried, allowed }) {
+export async function diagnose({ symptom, log, page, state, tried, allowed, history }) {
   const orders = allowed.filter((o) => ORDERS.includes(o));
   if (!orders.length) return null;
-  const schema = {
-    type: 'object',
-    properties: { diagnostic: { type: 'string' }, order: { type: 'string', enum: orders }, confidence: { type: 'number' }, reason: { type: 'string' } },
-    required: ['diagnostic', 'order', 'confidence', 'reason'],
-  };
+  const schema = z.object({ diagnostic: text(300), order: z.enum(orders), confidence, reason: text(300) });
   const user = [
     `Symptome : ${symptom}`,
     `Etat du bot : ${state}`,
     `Ordres possibles MAINTENANT (aucun autre) : ${orders.join(', ')}`,
     `Ordres deja donnes pour ce symptome : ${tried.length ? tried.join(', ') : 'aucun'}`,
+    `Ce qui a deja marche ou echoue sur ce genre de symptome : ${history || 'rien encore'}`,
     `Dernieres lignes du log :\n${log.slice(-15).join('\n')}`,
     `Texte de la page :\n${page.slice(0, 1200)}`,
     'Raisonne comme indique (symptome, indices, cause, dedans ou dehors, ordre, deja essaye), puis reponds en JSON.',
   ].join('\n\n');
-  const a = await chat('order', user, schema);
-  if (!a || !orders.includes(a.order)) return null;
-  return { diagnostic: String(a.diagnostic ?? '').slice(0, 300), order: a.order, confidence: clamp01(a.confidence), reason: String(a.reason ?? '').slice(0, 300) };
+  return ask('order', user, schema);
 }
 
 /** Ollama reachable? Model loaded, and where (RAM vs VRAM). Never throws. */
@@ -126,19 +122,13 @@ export async function status() {
  * @returns {Promise<{ answer: string, order: string } | null>}
  */
 export async function converse(messages, state) {
-  const schema = {
-    type: 'object',
-    properties: { answer: { type: 'string' }, order: { type: 'string', enum: ['aucun', ...ORDERS.filter((o) => o !== 'alerter')] } },
-    required: ['answer', 'order'],
-  };
+  const schema = z.object({ answer: text(2000), order: z.enum(['aucun', ...ORDERS.filter((o) => o !== 'alerter')]) });
   const turns = [
     { role: 'user', content: `Etat actuel du bot (pour repondre) :\n${state}\n\nReponds a kil court et concret. Si un ordre aiderait, mets-le dans "order", sinon "aucun". Tu n'executes rien : kil cliquera.` },
     { role: 'assistant', content: '{"answer":"Compris, je reponds a partir de cet etat.","order":"aucun"}' },
     ...messages,
   ];
-  const a = await chat('chat', turns, schema, { num_predict: 400, temperature: 0.3 });
-  if (!a || typeof a.answer !== 'string') return null;
-  return { answer: a.answer.trim(), order: ORDERS.includes(a.order) ? a.order : 'aucun' };
+  return ask('chat', turns, schema, { num_predict: 400, temperature: 0.3 });
 }
 
 /**
@@ -146,14 +136,8 @@ export async function converse(messages, state) {
  * @returns {Promise<{ purpose: string, useful: boolean, readOnly: boolean, suggestion: string } | null>}
  */
 export async function explain(change, pageText) {
-  const schema = {
-    type: 'object',
-    properties: { purpose: { type: 'string' }, useful: { type: 'boolean' }, readOnly: { type: 'boolean' }, suggestion: { type: 'string' } },
-    required: ['purpose', 'useful', 'readOnly', 'suggestion'],
-  };
+  const schema = z.object({ purpose: text(300), useful: z.boolean(), readOnly: z.boolean(), suggestion: text(300) });
   const user = `Nouveaute detectee sur le site : ${change}\n\nExtrait de la page :\n${pageText.slice(0, 2500)}\n\n`
     + 'A quoi sert cet element ? Est-il utile pour gagner de l XP ou du stuff ? Est-ce en lecture seule (onglet, filtre, affichage) ou une action qui modifie le compte ? Suggestion en une phrase.';
-  return chat('chat', user, schema);
+  return ask('chat', user, schema);
 }
-
-const clamp01 = (x) => Math.max(0, Math.min(1, +x || 0));
