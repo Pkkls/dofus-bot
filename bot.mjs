@@ -434,7 +434,16 @@ async function equipFromInventory(page) {
 
 // Ouvre le detail d'un objet de la grille et attend que le panneau montre CET objet (nom = texte de l'image).
 // Sinon null : on n'equipe ni ne vend jamais sur un panneau perime (le clic ne met pas toujours le panneau a jour).
+// regulation douce des passes de gestion : chaque objet ouvert = des actions serveur que le limiteur (qui ne garde que
+// les chargements de page) ne voit pas. Sans ca, la passe d'inventaire faisait 120 requetes en 2 min puis tout gelait.
+const pace = async () => {
+  if (netLastMin() < CFG.maxReqPerMin * 0.8) return;
+  const prev = S.status; S.status = 'throttle';
+  while (netLastMin() >= CFG.maxReqPerMin * 0.8) await sleep(2000);
+  S.status = prev;
+};
 async function openItem(main, item) {
+  await pace();
   const alt = (await item.locator('img').first().getAttribute('alt').catch(() => null))?.trim();
   if (!alt) return null;
   const cur = parseDetail(await main.innerText().catch(() => ''));
@@ -1717,7 +1726,9 @@ if (page.url().includes('/connexion')) {
   await page.goto(COMBAT);
 }
 
-await managePass(page);
+// passe de demarrage seulement si la derniere date de plus de 30 min : sinon chaque redemarrage refaisait une rafale
+if (Date.now() - (S.last?.inventaire ?? 0) > 1800000) await managePass(page);
+else decide(`Demarrage : passe de gestion faite il y a ${Math.round((Date.now() - S.last.inventaire) / 60000)} min, je ne la refais pas`);
 
 let autoClicked = false, presenceAlerted = false, idleSince = Date.now(), lastText = '', combats = 0;
 let zone = null, results = [], strikes = 0, winsSinceStrike = 0, fight = null, lastBoss = 0, nextBossCheck = 0, lastArena = 0; // fight : null | 'boss' | 'arene'
