@@ -391,7 +391,7 @@ details[open].card > summary .chev { transform: rotate(180deg); }
       <div class="ai-stats">
         <div><div class="l">Avis rendus</div><div class="v num" id="ai-n">-</div></div>
         <div><div class="l">Accord avec le moteur</div><div class="v num" id="ai-agree">-</div></div>
-        <div><div class="l">Deblocages decides</div><div class="v num" id="ai-unblock">-</div></div>
+        <div><div class="l">Bugs traites</div><div class="v num" id="ai-unblock">-</div></div>
         <div><div class="l">Temps moyen</div><div class="v num" id="ai-ms">-</div></div>
       </div>
       <div class="list" id="ai-log"></div>
@@ -793,13 +793,16 @@ function drawAi(S) {
   const agreed = zone.filter((x) => x.agree).length;
   $('ai-n').textContent = L.length;
   $('ai-agree').textContent = zone.length ? `${Math.round(agreed / zone.length * 100)} %` : '-';
-  $('ai-unblock').textContent = L.filter((x) => x.point === 'deblocage').length;
+  $('ai-unblock').textContent = L.filter((x) => x.point === 'deblocage' || x.point === 'medecin').length;
   $('ai-ms').textContent = L.length ? `${(L.reduce((a, x) => a + (x.ms ?? 0), 0) / L.length / 1000).toFixed(1)} s` : '-';
   $('ai-log').innerHTML = L.length ? L.map((x) => {
-    const head = x.point === 'deblocage'
+    const head = x.point === 'medecin'
+      ? `<span class="tag ${x.llm === 'alerter' || x.llm === 'pause' ? 'no' : 'act'}">medecin</span><span>${esc(x.symptom ?? '')} → ordre <b>${esc(x.llm ?? '')}</b></span>`
+      : x.point === 'deblocage'
       ? `<span class="tag act">deblocage</span><span>${esc(x.sig ?? '')} : <b>${esc(x.llm ?? '')}</b></span>`
       : `<span class="tag ${x.agree ? 'ok' : 'no'}">${x.agree ? "d'accord" : "pas d'accord"}</span><span>moteur : ${esc(x.engine ?? '')} · IA : <b>${esc(x.llm ?? '')}</b></span>`;
-    return `<div class="ai-item"><span class="t num">${hms(x.t)}</span><div><div class="h">${head}<span class="muted num">${Math.round((x.conf ?? 0) * 100)} % · ${((x.ms ?? 0) / 1000).toFixed(0)} s</span></div><div class="why">${esc(x.reason ?? '')}</div></div></div>`;
+    const why = x.point === 'medecin' ? `${x.diagnostic ?? ''}. ${x.reason ?? ''}` : (x.reason ?? '');
+    return `<div class="ai-item"><span class="t num">${hms(x.t)}</span><div><div class="h">${head}<span class="muted num">${Math.round((x.conf ?? 0) * 100)} % · ${((x.ms ?? 0) / 1000).toFixed(0)} s</span></div><div class="why">${esc(why)}</div></div></div>`;
   }).join('') : "<div class=\"empty\">Aucun avis pour l'instant. L'IA est consultee a chaque check XP (mode ombre : elle donne son avis, le moteur decide) et quand le bot reste fige sur un ecran qu'il ne connait pas (la, elle decide).</div>";
 }
 async function pollAi() {
@@ -820,7 +823,7 @@ const saveChat = () => { try { sessionStorage.setItem(CHAT_KEY, JSON.stringify(c
 function drawChat(pending) {
   const log = $('chat-log');
   log.innerHTML = (chat.length ? '' : "<div class=\"empty\">Pose une question a ton IA locale (Ollama, sur le CPU). Elle connait l'etat du bot et tes regles, mais n'execute rien.</div>")
-    + chat.map((m) => `<div class="msg ${m.role === 'user' ? 'me' : m.err ? 'err' : 'ai'}">${esc(m.content)}${m.ms ? `<span class="meta num">${(m.ms / 1000).toFixed(0)} s</span>` : ''}</div>`).join('')
+    + chat.map((m, i) => `<div class="msg ${m.role === 'user' ? 'me' : m.err ? 'err' : 'ai'}">${esc(m.content)}${m.ms ? `<span class="meta num">${(m.ms / 1000).toFixed(0)} s</span>` : ''}${m.order && m.order !== 'aucun' && m.order !== 'attendre' ? `<span class="meta"><button class="btn" type="button" data-order="${esc(m.order)}" data-i="${i}"${m.done ? ' disabled' : ''}>${m.done ? 'Ordre envoye' : `Executer : ${esc(m.order)}`}</button></span>` : ''}</div>`).join('')
     + (pending ? '<div class="msg ai thinking">reflechit (environ 10 s sur le CPU)</div>' : '');
   log.scrollTop = log.scrollHeight;
   $('chat-sugg').hidden = chat.length > 0;
@@ -834,8 +837,8 @@ async function askAi(q) {
   try {
     const r = await fetch('/api/llm/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: msgs }) });
     if (!r.ok) throw new Error(await r.text());
-    const { answer, ms } = await r.json();
-    chat.push({ role: 'assistant', content: answer, ms });
+    const { answer, order, ms } = await r.json();
+    chat.push({ role: 'assistant', content: answer, order, ms });
   } catch (e) {
     chat.push({ role: 'assistant', content: `Pas de reponse : ${e.message || 'IA locale injoignable'}. Verifie qu'Ollama tourne.`, err: true });
   }
@@ -845,6 +848,16 @@ $('chat-form').addEventListener('submit', (e) => { e.preventDefault(); askAi($('
 $('chat-in').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); askAi($('chat-in').value); } });
 $('chat-sugg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) askAi(b.textContent); });
 $('chat-clear').addEventListener('click', () => { chat = []; saveChat(); drawChat(false); });
+// ordre suggere par l'IA : rien ne part sans ce clic
+$('chat-log').addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-order]');
+  if (!b) return;
+  const o = b.dataset.order;
+  b.disabled = true;
+  const ok = await fetch(o === 'pause' ? '/api/pause' : `/api/action/${encodeURIComponent(o)}`, { method: 'POST' }).then((r) => r.ok).catch(() => false);
+  if (ok) { chat[+b.dataset.i].done = true; saveChat(); }
+  drawChat(false);
+});
 drawChat(false);
 
 /* ---------- rendu principal ---------- */

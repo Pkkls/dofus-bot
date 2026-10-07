@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 import { appendFileSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { adviseZone, pickBestMeasured, isCurrent } from './zone-advisor.mjs';
-import { choose, explain, converse, status as llmStatus } from './llm.mjs';
+import { choose, explain, converse, diagnose, ORDERS, status as llmStatus } from './llm.mjs';
 import { exec } from 'node:child_process';
 import http from 'node:http';
 import dns from 'node:dns/promises';
@@ -70,7 +70,8 @@ const toInbox = (line) => {
   appendFileSync('dump/inbox.jsonl', JSON.stringify(ev) + '\n');
   (S.inbox ??= []).unshift(ev); S.inbox.length = Math.min(S.inbox.length, 30);
 };
-const log = (line) => { const l = `${new Date().toISOString()} ${line}`; console.log(l); appendFileSync('bot.log', l + '\n'); try { toInbox(line); } catch {} push(); };
+const recentLog = []; // memoire courte pour le medecin (doctor) : les 300 dernieres lignes avec leur heure
+const log = (line) => { const l = `${new Date().toISOString()} ${line}`; console.log(l); appendFileSync('bot.log', l + '\n'); recentLog.push({ t: Date.now(), line }); if (recentLog.length > 300) recentLog.shift(); try { toInbox(line); } catch {} push(); };
 // temps reel : chaque client du tableau de bord garde un flux SSE ouvert ; push() regroupe les envois (max ~5/s)
 const clients = new Set();
 let pushTimer = null;
@@ -105,7 +106,80 @@ const KEEP = ['llmLog', 'passLog', 'zoneReq', 'ownScore', 'equipLog', 'hdvBought
 try { Object.assign(S, JSON.parse(readFileSync('state.json', 'utf8'))); } catch {}
 if (process.argv[2] !== 'test') setInterval(() => writeFileSync('state.json', JSON.stringify(Object.fromEntries(KEEP.map((k) => [k, S[k]])))), 10000);
 const alert = (m) => { process.stdout.write('\x07'); exec(`msg * "dofus-bot: ${m}"`); };
+
+// Medecin (doctor) : toutes les 30 s, a cote de la boucle (sans la bloquer), il cherche 3 symptomes de bug. Sur un
+// symptome, le LLM local lit le log, la page et la base de connaissance (knowledge/*.kb), raisonne et donne UN ordre
+// de la liste blanche ORDERS (rien qui depense, vend, brise ou reinitialise). Garde-fous : 1 appel / 5 min par symptome,
+// confiance < 0.4 = attendre, un ordre deja donne 2 fois pour le meme symptome devient "alerter".
+const doctor = { busy: false, last: {}, tried: {} };
+const PROGRESS = /^(ATTAQUE|VICTOIRE|DEFAITE|BOSS|AVENTURE|ARENE|ABYSSES)/;
+const CALM = new Set(['pause', 'repos', 'gestion', 'file', 'throttle', 'recharge', 'plafond', 'demarrage', 'rate-limit']);
+function symptoms() {
+  const now = Date.now(), out = [];
+  const recent = recentLog.filter((x) => now - x.t < 120000);
+  const counts = {};
+  for (const x of recent) { const k = x.line.replace(/\d+/g, '#').slice(0, 80); counts[k] = (counts[k] ?? 0) + 1; }
+  const [rep, n] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0] ?? [];
+  if (n >= 15) out.push({ key: `boucle:${rep}`, text: `la meme ligne repetee ${n} fois en 2 min : "${rep}"` });
+  const blocks = recentLog.filter((x) => now - x.t < 600000 && /^(BLOQUE|DEBLOCAGE appris)/.test(x.line));
+  let fails = 0;
+  for (let i = blocks.length - 1; i >= 0 && /^BLOQUE/.test(blocks[i].line); i--) fails++;
+  if (fails >= 3) out.push({ key: 'deblocage', text: `${fails} essais de deblocage de suite sans succes` });
+  const lastMove = [...recentLog].reverse().find((x) => PROGRESS.test(x.line))?.t ?? bootAt;
+  if (!S.paused && !CALM.has(S.status) && now - lastMove > 900000) out.push({ key: 'immobile', text: `aucun combat depuis ${Math.round((now - lastMove) / 60000)} min alors que le bot n'est ni en pause ni en attente (statut ${S.status})` });
+  return out;
+}
+const bootAt = Date.now();
+// Ordres faisables MAINTENANT : chacun a un executeur reel dans le bot et sa precondition est remplie. Le LLM ne voit
+// que cette liste (enum du schema) : un ordre invente ou impossible ne peut pas sortir.
+function feasibleOrders(tried) {
+  const now = Date.now();
+  const ok = {
+    attendre: true,
+    pause: !S.paused,
+    alerter: true,
+    f5: tried.filter((o) => o === 'f5').length < 2,
+    zone: !S.queue.includes('zone'),
+    spots: !S.queue.includes('spots'),
+    xphard: !S.queue.includes('xphard') && !S.xpHard,
+    deck: !S.queue.includes('deck'),
+    aventure: now > (S.advBlockedUntil ?? 0) && !S.queue.includes('aventure'),
+    boss: (energyNow() ?? 0) >= 2 && !!S.boss?.eta && S.boss.eta <= now && !S.queue.includes('boss'),
+    site: now - (S.last?.site ?? 0) > 1800000 && !S.queue.includes('site'),
+  };
+  return ORDERS.filter((o) => ok[o]);
+}
+async function runDoctor() {
+  if (doctor.busy) return;
+  const s = symptoms().find((x) => Date.now() - (doctor.last[x.key] ?? 0) > 300000);
+  if (!s) { for (const k of Object.keys(doctor.tried)) if (Date.now() - (doctor.last[k] ?? 0) > 1800000) delete doctor.tried[k]; return; }
+  doctor.busy = true; doctor.last[s.key] = Date.now();
+  try {
+    const tried = doctor.tried[s.key] ??= [];
+    let pageText = '';
+    try { pageText = `${page.url()}\n${await page.locator('body').innerText({ timeout: 3000 })}`; } catch {}
+    const state = `niveau ${S.level}, statut ${S.status}${S.paused ? ' (pause)' : ''}, energie ${S.energy ?? '?'}`;
+    const t0 = Date.now();
+    const allowed = feasibleOrders(tried);
+    const d = await diagnose({ symptom: s.text, log: recentLog.slice(-15).map((x) => x.line), page: pageText, state, tried, allowed });
+    if (!d) { log(`MEDECIN ${s.text} - IA locale injoignable, rien fait`); return; }
+    let order = d.confidence < 0.4 ? 'attendre' : d.order;
+    if (order !== 'attendre' && tried.filter((o) => o === order).length >= 2) order = 'alerter'; // deja donne 2 fois sans effet
+    if (!allowed.includes(order) && order !== 'alerter') order = 'attendre'; // ceinture et bretelles : jamais hors liste
+    tried.push(order);
+    (S.llmLog ??= []).unshift({ t: Date.now(), point: 'medecin', symptom: s.text, llm: order, diagnostic: d.diagnostic, conf: d.confidence, reason: d.reason, ms: Date.now() - t0 });
+    S.llmLog.length = Math.min(S.llmLog.length, 100);
+    log(`MEDECIN ${s.text} -> ${d.diagnostic} -> ordre ${order} (confiance ${Math.round(d.confidence * 100)} %)`);
+    decide(`IA medecin : ${s.text}. Diagnostic : ${d.diagnostic}. Ordre : ${order}${order !== d.order ? ` (le modele proposait ${d.order})` : ''}. ${d.reason}`);
+    if (order === 'pause' || order === 'alerter') { S.paused = true; log(`PAUSE (medecin : ${order})`); }
+    if (order === 'alerter') alert(`le medecin IA a mis le bot en pause : ${d.diagnostic}`);
+    if (ORDERS.includes(order) && ACTION_NAMES.includes(order) && !S.queue.includes(order)) S.queue.push(order);
+  } finally { doctor.busy = false; }
+}
+if (process.argv[2] !== 'test') setInterval(() => { runDoctor().catch(() => { doctor.busy = false; }); }, 30000);
 const ACTION_NAMES = ['gestion', 'coffres', 'deck', 'inventaire', 'hdv', 'carac', 'arene', 'boss', 'energie', 'forge', 'abysses', 'spots', 'site', 'xphard', 'entrainement', 'zone', 'aventure', 'f5', 'prestige', 'hdvvente'];
+// garde au demarrage : chaque ordre que l'IA peut donner a un executeur reel (sinon le bot refuse de demarrer)
+for (const o of ORDERS) if (!['attendre', 'pause', 'alerter', ...ACTION_NAMES].includes(o)) throw new Error(`ordre IA sans executeur : ${o}`);
 // horaires en minutes depuis minuit ; une plage peut passer minuit (ex. 540 -> 60 = 09:00 -> 01:00)
 const inWindow = (m, a, b) => a === b || (a < b ? m >= a && m < b : m >= a || m < b);
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -1300,8 +1374,8 @@ function startDashboard(page) {
           `XP hard ${hard ? 'en cours' : 'non'}, mesure de zones ${spots ? `en cours (${spots} restantes)` : 'non'}.`,
           `Dernieres decisions :\n${(S.decisions ?? []).slice(0, 6).map((x) => '- ' + x.m.slice(0, 200)).join('\n')}`].join('\n');
         const t0 = Date.now();
-        const answer = await converse(msgs, state);
-        return answer ? send(200, 'application/json', JSON.stringify({ answer, ms: Date.now() - t0 })) : send(503, 'text/plain', 'IA locale indisponible (Ollama arrete ?)');
+        const a = await converse(msgs, state);
+        return a ? send(200, 'application/json', JSON.stringify({ answer: a.answer, order: a.order, ms: Date.now() - t0 })) : send(503, 'text/plain', 'IA locale indisponible (Ollama arrete ?)');
       }
       if (req.method === 'POST' && req.url === '/api/config') {
         let body = '';
@@ -1694,7 +1768,7 @@ let clickFails = [], myWaitSince = 0, satStreak = 0, inQueue = false, chatDeadSi
 // Jamais : achats/ventes/brisage, fuite, deconnexion, guilde, reinitialisation, Discord, test de presence (traite avant).
 const UNBLOCK_OK = /^(Partir|Retour|Continuer|Plus tard|Fermer|OK|Compris|J.ai compris|Suivant|Étape suivante|Chasse libre|Autres groupes|Refaire ce combat|Réessayer|Passer|Valider|Reprendre|Fin du tour)/i;
 const UNBLOCK_NO = /Acheter|Vendre|Briser|Fuir|Déconnexion|Dissoudre|Réinitialiser|Supprimer|Abandonner|Payer|Discord|Défier|Améliorer|Fusionner|Équiper|Ouvrir/i;
-let unblockPending = null, unblockTried = new Set();
+let unblockPending = null, unblockTried = new Set(), inactiveHits = [];
 // signature d'ecran = chemin + titre de la page (contenu de main, hors en-tete/nom du perso), chiffres masques
 const screenSig = (url, mainText) => {
   const title = mainText.split('\n').map((l) => l.trim()).find((l) => l.length > 3 && !(S.name && l.includes(S.name)) && !/DofusMasters|Annonce|Événement|Déconnexion/.test(l)) ?? '';
@@ -1720,7 +1794,7 @@ async function unblock(page, text) {
     const opts = acts.slice(0, 8).map((a, i) => ({ id: String.fromCharCode(65 + i), label: say(a), act: a }));
     const shown = (await page.locator('main').innerText().catch(() => text)).slice(0, 1500);
     const t0 = Date.now();
-    const a = await choose(`Le bot est bloque depuis ${CFG.stuckSec} s : rien ne bouge sur la page "${sig}". Texte visible :\n${shown}\n\nQuelle action fait avancer le jeu ?`, opts);
+    const a = await choose(`Le bot est bloque depuis ${CFG.stuckSec} s : rien ne bouge sur la page "${sig}". Texte visible :\n${shown}\n\nQuelle action fait avancer le jeu ?`, opts, 'unblock');
     if (a) {
       act = opts.find((o) => o.id === a.option).act;
       (S.llmLog ??= []).unshift({ t: Date.now(), point: 'deblocage', sig, llm: act, conf: a.confidence, reason: a.reason, ms: Date.now() - t0 });
@@ -2000,10 +2074,22 @@ while (true) {
   // ecran d'inactivite ("Tu etais inactif", place liberee, progression sauvegardee) : pas un controle anti-bot, juste un slot rendu.
   // On attend d'avoir le droit de jouer (energie, plage horaire) puis on recharge la page pour reprendre sa place, sans cliquer dedans.
   if (/Tu étais inactif|ta place a été libérée/i.test(text)) {
-    log('INACTIVITE - place liberee, je reprends des que je peux jouer');
+    // l'ecran revient apres rechargement (07/10 : site passe en V2, ancienne adresse) -> attente croissante puis pause +
+    // alerte au 4e en 10 min : avant, un rechargement toutes les 1,3 s sans fin
+    inactiveHits = inactiveHits.filter((t) => Date.now() - t < 600000); inactiveHits.push(Date.now());
+    if (inactiveHits.length >= 4) {
+      S.paused = true; inactiveHits = [];
+      log('INACTIVITE en boucle (4 fois en 10 min) - PAUSE, le site a peut-etre change d\'adresse');
+      decide('Ecran d\'inactivite qui revient a chaque rechargement : pause et alerte, verifie l\'adresse du site (passage en V2 ?)');
+      alert('ecran "place liberee" en boucle : bot en pause, verifie l\'adresse du site');
+      continue;
+    }
+    const wait = [0, 30000, 120000][inactiveHits.length - 1];
+    log(`INACTIVITE - place liberee, je reprends ${wait ? `dans ${wait / 1000} s` : 'des que je peux jouer'}`);
     decide('Ecran d\'inactivite (place liberee) : j\'attends de pouvoir jouer puis je recharge la page pour reprendre ma place');
     S.status = 'presence';
     await gate();
+    if (wait) await sleep(wait);
     await page.goto(COMBAT).catch(() => {});
     autoClicked = false; idleSince = Date.now();
     continue;
