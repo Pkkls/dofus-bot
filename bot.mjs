@@ -1642,7 +1642,7 @@ async function shadowZoneAdvice(facts, d, label) {
   if (!a) return;
   const picked = options.find((o) => o.id === a.option);
   const engine = d.action === 'stay' ? facts.currentZone : d.action === 'move' ? d.zone : d.zones[0];
-  const agree = d.action === 'probe' ? d.zones.includes(picked.href) : picked.href === engine;
+  const agree = d.action === 'probe' ? picked.href !== facts.currentZone && d.zones.includes(picked.href) : picked.href === engine; // probe : d'accord seulement s'il veut aussi tester une autre zone
   (S.llmLog ??= []).unshift({ t: Date.now(), point: 'zone', lvl, engine: `${d.action} ${label(engine)}`, llm: label(picked.href), agree, conf: a.confidence, reason: a.reason, ms: Date.now() - t0 });
   S.llmLog.length = Math.min(S.llmLog.length, 100);
   decide(`IA (ombre) : ${agree ? "d'accord" : "PAS d'accord"} avec le moteur (${d.action}) -> ${label(picked.href)}, confiance ${Math.round(a.confidence * 100)} % : ${a.reason} [${Math.round((Date.now() - t0) / 1000)} s]`);
