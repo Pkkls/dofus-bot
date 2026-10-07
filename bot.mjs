@@ -1861,7 +1861,7 @@ let clickFails = [], myWaitSince = 0, satStreak = 0, inQueue = false, chatDeadSi
 // Jamais : achats/ventes/brisage, fuite, deconnexion, guilde, reinitialisation, Discord, test de presence (traite avant).
 const UNBLOCK_OK = /^(Partir|Retour|Continuer|Plus tard|Fermer|OK|Compris|J.ai compris|Suivant|Étape suivante|Chasse libre|Autres groupes|Refaire ce combat|Réessayer|Passer|Valider|Reprendre|Fin du tour)/i;
 const UNBLOCK_NO = /Acheter|Vendre|Briser|Fuir|Déconnexion|Dissoudre|Réinitialiser|Supprimer|Abandonner|Payer|Discord|Défier|Améliorer|Fusionner|Équiper|Ouvrir/i;
-let unblockPending = null, unblockTried = new Set(), inactiveHits = [];
+let unblockPending = null, unblockTried = new Set(), inactiveHits = [], stuckSeen = {};
 // signature d'ecran = chemin + titre de la page (contenu de main, hors en-tete/nom du perso), chiffres masques
 const screenSig = (url, mainText) => {
   const title = mainText.split('\n').map((l) => l.trim()).find((l) => l.length > 3 && !(S.name && l.includes(S.name)) && !/DofusMasters|Annonce|Événement|Déconnexion/.test(l)) ?? '';
@@ -1879,6 +1879,16 @@ async function unblock(page, text) {
   const score = (a) => { const u = known[a]; return u ? (u.ok + 1) / (u.ok + u.ko + 2) : 0.5; };
   const acts = ['F5', ...clickables, 'combat', 'attaque'] // F5 d'abord (serveur souvent surcharge), le tri par score appris garde la main.filter((a) => !unblockTried.has(a)).sort((a, b) => score(b) - score(a));
   let act = acts[0] ?? (unblockTried.clear(), 'F5');
+  // preuves avant tout correctif : au 3e echec sur un meme ecran, capture (image + texte + boutons) une fois par ecran,
+  // pour trouver la cause racine au lieu de patcher a l'aveugle (06/10 : 36 F5 sur un combat des Abysses fige)
+  stuckSeen[sig] = (stuckSeen[sig] ?? 0) + 1;
+  if (stuckSeen[sig] === 3) {
+    const f = `dump/stuck-${sig.replace(/\W+/g, '_').slice(0, 60)}`;
+    await page.screenshot({ path: `${f}.png` }).catch(() => {});
+    const ctrls = await page.locator('button:visible, a:visible, [role=button]:visible').evaluateAll((els) => els.map((e) => `${e.tagName} "${(e.innerText || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 60)}" ${e.disabled ? '[disabled]' : ''}`)).catch(() => []);
+    writeFileSync(`${f}.txt`, `${page.url()}\n${new Date().toISOString()}\n\n${await page.locator('body').innerText().catch(() => '')}\n\n=== CONTROLES VISIBLES\n${ctrls.join('\n')}\n\n=== LOG\n${recentLog.slice(-20).map((x) => x.line).join('\n')}`);
+    log(`PREUVE ecran fige "${sig}" capture dans ${f}.png/.txt`);
+  }
   // ecran inconnu (aucune action n'y a jamais marche) : le LLM local lit la page et choisit parmi les memes actions
   // sures (deja filtrees par UNBLOCK_OK/UNBLOCK_NO). Le resultat s'apprend comme le reste : si ca marche, la prochaine
   // fois l'action connue passe en premier et le LLM n'est plus consulte.
