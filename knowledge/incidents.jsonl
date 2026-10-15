@@ -10,3 +10,4 @@
 {"symptom":"aventure bloquee sur la meme etape","clues":"page /aventure, Continuer l aventure visible, f5 sans effet","order":"aventure","outcome":"gueri","why":"relancer l etape a debloque"}
 {"symptom":"fenetre Es-tu toujours la avec des chiffres a cliquer","clues":"test de presence anti-bot, Clique sur le 5","order":"alerter","outcome":"gueri","why":"seul kil repond au test de presence"}
 {"symptom":"ecran de victoire immobile","clues":"page /combat VICTOIRE","order":"pause","outcome":"sans effet","why":"la pause a arrete le bot pour rien : un f5 suffisait"}
+{"symptom":"aucun combat depuis 26 min alors que le bot n'est ni en pause ni en attente (statut combat)","clues":" ; MEDECIN 37 essais de deblocage de suite sans succes -> Le bot est bloqué dans l'état 'combat' sans pouvoir quitter cette page. -> ordre attendre (confiance 90 %","order":"f5","outcome":"sans effet","why":"verifie 2 min apres par le bot","at":"2026-10-11T06:27"}
